@@ -18,6 +18,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.filminverter.engine.NegEngine;
@@ -30,30 +31,35 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
- * M0 probe, version 3. Everything is logged to FIPROBE.TXT on the card root.
+ * M0 probe, version 4. Everything is logged to FIPROBE.TXT on the card root.
  *
- * On launch (yellow status bar = WORKING, buttons ignored until green DONE):
- *   [1] device, heap, Sony time   [2] Sony classes
- *   [3] invert the newest RAW+JPEG pair's JPEG -> /FILMINV/<name>_POS.JPG (camera refuses new DCIM folders)
- * Centre (or the "Curves" button) when READY opens the CURVE EXPLORER (live view):
- *   Probe 2 showed CameraEx.setExtendedGammaTable() changes live view instantly, but the 2048-byte table
- *   format is unknown (the camera has no table by default; a new one holds leftover memory). The explorer
- *   builds clean curves in several candidate formats:
- *     LEFT/RIGHT or dials (or < > buttons)  = previous / next format
- *     CENTRE (or "Normal/Inverted")         = toggle plain (identity) vs inverted curve
- *     UP (or "Camera default")              = remove our table (camera's own curve)
- *     MENU (or "Back")                      = leave the explorer, then MENU again exits
- *   The format whose PLAIN curve looks exactly like normal live view is the right one.
- * Every change is logged with a timestamp. Tables are released after use (probe 2 never released them,
- * a suspect for the freeze on exit). Exit steps are logged so a hang shows where it happened.
+ * Probe 3 found the extended gamma table format: 1 curve x 1024 entries, u16 little-endian, 0..1023.
+ *
+ * On launch (yellow = WORKING, green = DONE):
+ *   [1] device  [2] filename test: does the card accept long names, or only 8.3?
+ *   [3] invert the newest RAW+JPEG pair -> /FILMINV/<same 8.3 name>.JPG
+ * Centre (or "Live view") when READY opens INVERTED LIVE VIEW with adjustable rows:
+ *   UP / DOWN (or Row buttons)         = choose a row
+ *   LEFT / RIGHT / dials, or the slider = change the row's value
+ *   CENTRE (or "Pos/Neg")              = positive (inverted curve) <-> negative (plain curve)
+ *   SHUTTER (or "Capture")             = take a picture with the current curve: is the JPEG a positive?
+ *   MENU (or "Back")                   = leave live view (everything restored), MENU again = exit
+ * Rows: curve top (headroom against the yellow speckles), colour temperature, WB shift amber-blue,
+ *       WB shift green-magenta (to cancel the orange mask), RGB matrix identity scale test.
+ * Every camera setting touched is saved first and restored (and read back) when leaving live view.
  */
 public class MainActivity extends SonyActivity implements SurfaceHolder.Callback {
 
     private static final int BUSY = 0, READY = 1, LIVE = 2;
 
     private TextView status;
+    private TextView rowLabel;
+    private SeekBar slider;
+    private LinearLayout rowPanel;
     private TextView text;
     private ScrollView scroll;
     private SurfaceView surface;
@@ -62,13 +68,25 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private volatile boolean surfaceReady;
     private volatile int state = BUSY;
     private long lastMenuPress;
+    private boolean sliderUpdating;
 
-    // curve explorer state; restoreCamera() undoes everything
+    // live view state; restoreCamera() undoes everything
     private CameraEx cameraEx;
     private CameraEx.GammaTable activeTable;
-    private int candidate = 0;
-    private boolean inverted = false;
-    private boolean usingDefault = true;
+    private final Map<String, String> savedParams = new LinkedHashMap<String, String>();
+    private boolean positive = true;
+
+    // ------------------------------------------------------------------ adjustable rows
+    private static final int ROW_CURVE = 0, ROW_TEMP = 1, ROW_AB = 2, ROW_GM = 3, ROW_MATRIX = 4;
+    private static final String[] ROW_NAMES = {"Curve top", "Colour temp", "WB amber-blue", "WB green-magenta", "Matrix scale test"};
+    private static final int[] CURVE_TOPS = {1023, 1008, 992, 960, 900, 800};
+    private static final int[] MATRIX_SCALES = {0, 1, 64, 100, 128, 256, 512, 1000, 1024, 4096};   // 0 = matrix off
+    private int row = ROW_CURVE;
+    private int curveIdx = 2;          // 992: a little headroom by default
+    private int temp = 5500;           // 2500..9900 step 100
+    private int shiftAB = 0, shiftGM = 0;   // -32..32
+    private int matrixIdx = 0;
+    private boolean wbTouched, shiftTouched, matrixTouched;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -91,12 +109,35 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         LinearLayout overlay = new LinearLayout(this);
         overlay.setOrientation(LinearLayout.VERTICAL);
         status = new TextView(this);
-        status.setTextSize(15);
+        status.setTextSize(14);
         status.setTextColor(Color.BLACK);
         status.setGravity(Gravity.CENTER);
-        status.setPadding(4, 4, 4, 4);
+        status.setPadding(4, 2, 4, 2);
         overlay.addView(status, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // row panel: label + touch slider (hidden until live view)
+        rowPanel = new LinearLayout(this);
+        rowPanel.setOrientation(LinearLayout.HORIZONTAL);
+        rowPanel.setBackgroundColor(0xA0000000);
+        rowLabel = new TextView(this);
+        rowLabel.setTextSize(14);
+        rowLabel.setTextColor(Color.WHITE);
+        rowLabel.setPadding(6, 0, 6, 0);
+        rowPanel.addView(rowLabel, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        slider = new SeekBar(this);
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                if (fromUser && !sliderUpdating) { setRowValueFromSlider(p); }
+            }
+            public void onStartTrackingTouch(SeekBar s) { out("touch: slider start"); }
+            public void onStopTrackingTouch(SeekBar s) { out("touch: slider stop at " + s.getProgress()); }
+        });
+        rowPanel.addView(slider, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f));
+        rowPanel.setVisibility(View.GONE);
+        overlay.addView(rowPanel, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
         scroll = new ScrollView(this);
         text = new TextView(this);
         text.setTextSize(11);
@@ -105,14 +146,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         scroll.addView(text);
         overlay.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        // Touch test + touch controls: same actions as the keys. Every touch is logged (dispatchTouchEvent),
-        // so the log tells whether the a6500 passes touches to apps at all.
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
+        addButton(buttons, "Row up", new Runnable() { public void run() { onUpAction(); } });
+        addButton(buttons, "Row down", new Runnable() { public void run() { onDownAction(); } });
         addButton(buttons, "<", new Runnable() { public void run() { onPrevAction(); } });
-        addButton(buttons, "Curves / Normal-Inv", new Runnable() { public void run() { onEnterAction(); } });
         addButton(buttons, ">", new Runnable() { public void run() { onNextAction(); } });
-        addButton(buttons, "Camera default", new Runnable() { public void run() { onUpAction(); } });
+        addButton(buttons, "Live view / Pos-Neg", new Runnable() { public void run() { onEnterAction(); } });
+        addButton(buttons, "Capture", new Runnable() { public void run() { onShutterAction(); } });
         addButton(buttons, "Back / Exit", new Runnable() { public void run() { onMenuAction(); } });
         overlay.addView(buttons, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -120,14 +161,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         setContentView(root);
 
         setStatus(BUSY, "WORKING... please wait");
-        out("=== Film Inverter probe 3, " + now() + " ===");
+        out("=== Film Inverter probe 4, " + now() + " ===");
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
     }
 
     private void addButton(LinearLayout row, final String label, final Runnable action) {
         Button btn = new Button(this);
         btn.setText(label);
-        btn.setTextSize(12);
+        btn.setTextSize(11);
         btn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { out("touch button: " + label); action.run(); }
         });
@@ -153,7 +194,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     @Override
     protected void logWarning(String what, Throwable t) { err(what, t); }
 
-    /** Big status bar at the top. Colour: yellow = working, green = ready, cyan = curve explorer. */
+    /** Status bar. Colour: yellow = working, green = ready, cyan = live view. */
     private void setStatus(final int newState, final String msg) {
         state = newState;
         if (log != null) { log.println("STATUS: " + msg); log.flush(); }
@@ -165,13 +206,15 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         });
     }
 
-    private void showLog(final boolean visible) {
+    private void showLive(final boolean live) {
         ui.post(new Runnable() {
-            public void run() { scroll.setVisibility(visible ? View.VISIBLE : View.GONE); }
+            public void run() {
+                scroll.setVisibility(live ? View.GONE : View.VISIBLE);
+                rowPanel.setVisibility(live ? View.VISIBLE : View.GONE);
+            }
         });
     }
 
-    /** Real time from Sony's TimeUtil (java.util.Date says 1970 on the camera). */
     private String now() {
         try {
             Calendar c = DateTime.getInstance().getCurrentTime();
@@ -203,36 +246,36 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     // ------------------------------------------------------------------ safe probes
     private void runSafeProbes() {
         setStatus(BUSY, "WORKING 1/3: device info");
-        try { probeDevice(); } catch (Throwable t) { err("device", t); }
-        setStatus(BUSY, "WORKING 2/3: Sony API check");
-        try { probeSonyApi(); } catch (Throwable t) { err("sony api", t); }
+        out("[1] model=" + Build.MODEL + " android=" + Build.VERSION.RELEASE + " sdk=" + Build.VERSION.SDK_INT
+                + " maxMemory=" + Runtime.getRuntime().maxMemory() / 1048576 + "MB  sony time=" + now());
+        setStatus(BUSY, "WORKING 2/3: filename test");
+        try { filenameTest(); } catch (Throwable t) { err("filename test", t); }
         setStatus(BUSY, "WORKING 3/3: inverting newest RAW+JPEG (~10 s)");
         try {
             File jpg = pickJpeg();
             if (jpg != null) invertFile(jpg);
         } catch (Throwable t) { err("invert", t); }
         out("--- safe probes done ---");
-        setStatus(READY, "DONE. Centre = curve explorer, MENU = exit");
+        setStatus(READY, "DONE. Centre / 'Live view' = inverted live view, MENU = exit");
     }
 
-    private void probeDevice() {
-        Runtime rt = Runtime.getRuntime();
-        out("[1] model=" + Build.MODEL + " android=" + Build.VERSION.RELEASE + " sdk=" + Build.VERSION.SDK_INT
-                + " maxMemory=" + rt.maxMemory() / 1048576 + "MB  sony time=" + now());
-    }
-
-    private static final String[] SONY_CLASSES = {
-        "com.sony.scalar.hardware.CameraEx",
-        "com.sony.scalar.hardware.CameraEx$GammaTable",
-        "com.sony.scalar.provider.AvindexStore",
-    };
-
-    private void probeSonyApi() {
-        StringBuilder s = new StringBuilder("[2] Sony classes:");
-        for (String name : SONY_CLASSES) {
-            boolean ok;
-            try { Class.forName(name); ok = true; } catch (Throwable t) { ok = false; }
-            s.append(ok ? "  ok " : "  MISSING ").append(name.substring(name.lastIndexOf('.') + 1));
+    /** Probe 3: FILMINV/LTL00002_POS.JPG failed with ENOENT while 8.3 names always worked. Confirm. */
+    private void filenameTest() {
+        File dir = new File(Environment.getExternalStorageDirectory(), "FILMINV");
+        dir.mkdirs();
+        String[] names = {"SHORT.TXT", "LONGNAME_TEST.TXT", "lower.txt", "AB_CD.TXT"};
+        StringBuilder s = new StringBuilder("[2] write test in " + dir.getAbsolutePath() + ":");
+        for (String n : names) {
+            File f = new File(dir, n);
+            try {
+                FileOutputStream fo = new FileOutputStream(f);
+                fo.write(n.getBytes());
+                fo.close();
+                s.append("  ").append(n).append("=OK");
+                f.delete();                                   // our own test file only
+            } catch (Throwable t) {
+                s.append("  ").append(n).append("=FAIL(").append(t.getMessage()).append(')');
+            }
         }
         out(s.toString());
     }
@@ -240,7 +283,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     /** Newest JPEG that has an ARW with the same name next to it (a RAW+JPEG pair). */
     private File pickJpeg() {
         File dcim = new File(Environment.getExternalStorageDirectory(), "DCIM");
-        out("[3] DCIM canWrite=" + dcim.canWrite());
         File best = null;
         File[] sub = dcim.listFiles();
         if (sub != null) {
@@ -256,15 +298,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 }
             }
         }
-        if (best == null) {
-            out("    NO RAW+JPEG pair found. Set Quality = RAW+JPEG, shoot a negative, relaunch.");
-            return null;
-        }
-        out("    newest RAW+JPEG pair: " + best.getAbsolutePath());
+        if (best == null) { out("[3] NO RAW+JPEG pair found."); return null; }
+        out("[3] newest RAW+JPEG pair: " + best.getAbsolutePath());
         return best;
     }
 
-    /** Inversion at 1/4 size (1/2 does not fit the 24 MB heap). Output outside DCIM, a new file only. */
+    /** Inversion at 1/4 size. Output: /FILMINV/<same 8.3 name> (a new file; the original is untouched). */
     private void invertFile(File jpg) throws Exception {
         long t0 = System.currentTimeMillis();
         BitmapFactory.Options d = new BitmapFactory.Options();
@@ -276,33 +315,24 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         int[] px = new int[w * h];
         bm.getPixels(px, 0, w, 0, 0, w, h);
         bm.recycle();
-        long t1 = System.currentTimeMillis();
-
         NegEngine.Profile p = new NegEngine.Profile();
         p.base = autoBase(px);
-        out("    decoded " + w + "x" + h + " in " + (t1 - t0) + " ms; auto base (linear) = " + fmt(p.base));
         NegEngine.Histogram hist = new NegEngine.Histogram(p);
         hist.add(px, 0, px.length, 4);
         NegEngine.levelsFromHistogram(p, hist);
-        int[][] lut = NegEngine.buildLuts(p);
-        NegEngine.apply(px, 0, px.length, lut, p.film);
-        long t2 = System.currentTimeMillis();
-
+        NegEngine.apply(px, 0, px.length, NegEngine.buildLuts(p), p.film);
         Bitmap outBm = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
         px = null;
         File dir = new File(Environment.getExternalStorageDirectory(), "FILMINV");
-        boolean made = dir.mkdirs();
-        out("    output folder " + dir.getAbsolutePath() + " exists=" + dir.isDirectory() + " (mkdirs " + made + ")");
-        File dst = new File(dir, jpg.getName().replaceAll("(?i)\\.JPG$", "") + "_POS.JPG");
+        dir.mkdirs();
+        File dst = new File(dir, jpg.getName().toUpperCase());
         FileOutputStream fo = new FileOutputStream(dst);
         try { outBm.compress(Bitmap.CompressFormat.JPEG, 92, fo); } finally { fo.close(); }
         outBm.recycle();
-        long t3 = System.currentTimeMillis();
-        out("    invert " + (t2 - t1) + " ms, encode+write " + (t3 - t2) + " ms -> " + dst.getAbsolutePath());
-        out("    profile " + NegEngine.toJson(p));
+        out("    " + w + "x" + h + " base " + fmt(p.base) + " -> wrote " + dst.getAbsolutePath()
+                + " (" + dst.length() / 1024 + " KB) in " + (System.currentTimeMillis() - t0) + " ms");
     }
 
-    /** Film base guess: per-channel 99.5th percentile of pixels with no clipped channel. */
     private static double[] autoBase(int[] px) {
         long[][] h = new long[3][256];
         long n = 0;
@@ -327,116 +357,222 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         return String.format("[%.4f, %.4f, %.4f]", a[0], a[1], a[2]);
     }
 
-    // ------------------------------------------------------------------ curve explorer
-    /**
-     * Candidate layouts for the 2048-byte table. Each fills the whole table with one or more curves.
-     * curves x entries, bytes per entry, big-endian?, interleaved?, output maximum.
-     */
-    private static final int[][] CAND = {
-        // curves, entries, bytes, bigEndian, interleaved, outMax
-        {1, 1024, 2, 0, 0, 65535},
-        {1, 1024, 2, 0, 0, 4095},
-        {1, 1024, 2, 0, 0, 1023},
-        {1, 1024, 2, 1, 0, 65535},
-        {1, 1024, 2, 1, 0, 4095},
-        {4, 256, 2, 0, 0, 65535},
-        {4, 256, 2, 0, 0, 4095},
-        {4, 256, 2, 0, 0, 1023},
-        {4, 256, 2, 0, 1, 4095},
-        {4, 256, 2, 0, 1, 65535},
-        {1, 512, 4, 0, 0, 65535},
-        {1, 512, 4, 0, 0, 4095},
-        {1, 2048, 1, 0, 0, 255},
+    // ------------------------------------------------------------------ live view
+    private static final String[] SAVED_KEYS = {
+        "whitebalance", "color-temperture-white-balance", "white-balance-shift-mode",
+        "white-balance-shift-lb", "white-balance-shift-cc", "rgb-matrix-mode", "rgb-matrix",
     };
 
-    private static String describe(int c) {
-        int[] k = CAND[c];
-        String bits = k[5] == 65535 ? "16-bit" : k[5] == 4095 ? "12-bit" : k[5] == 1023 ? "10-bit" : "8-bit";
-        String layout = k[0] == 1 ? "1 curve x " + k[1] : k[0] + " curves x " + k[1] + (k[4] == 1 ? " interleaved" : " planar");
-        String type = k[2] == 1 ? "u8" : k[2] == 2 ? (k[3] == 1 ? "u16 BE" : "u16 LE") : "u32 LE";
-        return (c + 1) + "/" + CAND.length + "  " + layout + ", " + type + ", " + bits;
-    }
-
-    private static byte[] buildTable(int c, boolean invert, int size) {
-        int[] k = CAND[c];
-        int curves = k[0], entries = k[1], bpe = k[2], max = k[5];
-        boolean be = k[3] == 1, inter = k[4] == 1;
-        byte[] b = new byte[size];
-        int total = Math.min(curves * entries, size / bpe);
-        for (int e = 0; e < total; e++) {
-            int i = inter ? e / curves : e % entries;           // position along the curve
-            double x = i / (double) (entries - 1);
-            double y = invert ? 1.0 - x : x;
-            long v = Math.round(y * max);
-            int o = e * bpe;
-            for (int j = 0; j < bpe; j++) {
-                int shift = be ? 8 * (bpe - 1 - j) : 8 * j;
-                b[o + j] = (byte) (v >> shift);
-            }
-        }
-        return b;
-    }
-
-    private void startExplorer() {
-        out("[4] curve explorer, " + now());
-        showLog(false);
+    private void startLive() {
+        out("[4] inverted live view, " + now());
         try {
-            if (!surfaceReady) { out("    surface not ready"); setStatus(READY, "Surface not ready, try again"); showLog(true); return; }
+            if (!surfaceReady) { setStatus(READY, "Surface not ready, try again"); return; }
             cameraEx = CameraEx.open(0, null);
             Camera cam = cameraEx.getNormalCamera();
+            Camera.Parameters p = cam.getParameters();
+            savedParams.clear();
+            StringBuilder s = new StringBuilder("    saved settings:");
+            for (String k : SAVED_KEYS) { savedParams.put(k, p.get(k)); s.append(' ').append(k).append('=').append(p.get(k)); }
+            out(s.toString());
+            try { temp = Integer.parseInt(p.get("color-temperture-white-balance")); } catch (Throwable ignored) {}
+            wbTouched = shiftTouched = matrixTouched = false;
             cam.setPreviewDisplay(surface.getHolder());
             cam.startPreview();
-            try {
-                Camera.Parameters prm = cam.getParameters();
-                out("    gamma supported=" + cameraEx.createParametersModifier(prm).isExtendedGammaTableSupported()
-                        + ", current table=" + (cameraEx.getExtendedGammaTable() == null ? "none" : "set"));
-            } catch (Throwable t) { err("gamma query", t); }
-            usingDefault = true;
-            setStatus(LIVE, "CAMERA DEFAULT curve.  Centre = start formats, < > = format, MENU = back");
-            out("    showing camera default, " + now());
+            positive = true;
+            applyCurve();
+            showLive(true);
+            refreshRow();
         } catch (Throwable t) {
-            err("start explorer", t);
+            err("start live view", t);
             restoreCamera();
-            showLog(true);
+            showLive(false);
             setStatus(READY, "Camera open failed (see log). MENU = exit");
         }
     }
 
-    /** Build and apply the current candidate; release the previous table once it is no longer in use. */
-    private synchronized void applyCandidate() {
+    /** Format from probe 3: 1024 x u16 LE, 0..top. Positive = inverted. */
+    private synchronized void applyCurve() {
         if (cameraEx == null) return;
         try {
+            int top = CURVE_TOPS[curveIdx];
             CameraEx.GammaTable t = cameraEx.createGammaTable();
-            int size = t.getSize();
-            t.write(buildTable(candidate, inverted, size));
+            byte[] b = new byte[t.getSize()];                 // the buffer is uninitialised: fill all of it
+            for (int i = 0; i < 1024 && 2 * i + 1 < b.length; i++) {
+                int v = (int) Math.round((positive ? 1023 - i : i) * top / 1023.0);
+                b[2 * i] = (byte) v;
+                b[2 * i + 1] = (byte) (v >> 8);
+            }
+            t.write(b);
             cameraEx.setExtendedGammaTable(t);
             CameraEx.GammaTable old = activeTable;
             activeTable = t;
-            usingDefault = false;
             if (old != null) { try { old.release(); } catch (Throwable r) { err("release old table", r); } }
-            String d = describe(candidate) + (inverted ? "  INVERTED" : "  PLAIN");
-            out("    " + now() + "  " + d + "  (table " + size + " bytes)");
-            setStatus(LIVE, d + (inverted ? "" : "  - normal-looking?"));
+            out("    " + now() + "  curve " + (positive ? "POSITIVE" : "NEGATIVE") + " top=" + top);
+            updateStatusLine();
         } catch (Throwable t) {
-            err("apply candidate " + (candidate + 1), t);
+            err("apply curve", t);
         }
     }
 
-    private synchronized void useCameraDefault() {
+    /** Write one or more camera parameters, then read them back. */
+    private synchronized void setParams(String... kv) {
         if (cameraEx == null) return;
+        Camera cam = cameraEx.getNormalCamera();
         try {
-            cameraEx.setExtendedGammaTable(null);
-            if (activeTable != null) { activeTable.release(); activeTable = null; }
-            usingDefault = true;
-            out("    " + now() + "  camera default curve");
-            setStatus(LIVE, "CAMERA DEFAULT curve.  < > = format, Centre = plain/inverted, MENU = back");
-        } catch (Throwable t) { err("camera default", t); }
+            Camera.Parameters p = cam.getParameters();
+            for (int i = 0; i + 1 < kv.length; i += 2) p.set(kv[i], kv[i + 1]);
+            cam.setParameters(p);
+            Camera.Parameters r = cam.getParameters();
+            StringBuilder s = new StringBuilder("    " + now() + "  set");
+            for (int i = 0; i + 1 < kv.length; i += 2) {
+                String got = r.get(kv[i]);
+                s.append(' ').append(kv[i]).append('=').append(kv[i + 1]);
+                if (got == null || !got.equals(kv[i + 1])) s.append(" (READBACK ").append(got).append(')');
+            }
+            out(s.toString());
+        } catch (Throwable t) {
+            err("setParameters " + java.util.Arrays.toString(kv), t);
+        }
     }
 
-    /** Undo everything: our table off and released, preview stopped, camera released. Safe to call twice. */
+    private void applyRow() {
+        switch (row) {
+            case ROW_CURVE: applyCurve(); break;
+            case ROW_TEMP:
+                wbTouched = true;
+                setParams("whitebalance", "color-temp", "color-temperture-white-balance", String.valueOf(temp));
+                break;
+            case ROW_AB: case ROW_GM:
+                shiftTouched = true;
+                setParams("white-balance-shift-mode", "true", "white-balance-shift-lb", String.valueOf(shiftAB),
+                        "white-balance-shift-cc", String.valueOf(shiftGM));
+                break;
+            case ROW_MATRIX:
+                matrixTouched = true;
+                int s = MATRIX_SCALES[matrixIdx];
+                if (s == 0) setParams("rgb-matrix-mode", "false");
+                else setParams("rgb-matrix-mode", "true", "rgb-matrix", s + ",0,0,0," + s + ",0,0,0," + s);
+                break;
+        }
+        refreshRow();
+    }
+
+    private String rowValueText(int r) {
+        switch (r) {
+            case ROW_CURVE: return String.valueOf(CURVE_TOPS[curveIdx]);
+            case ROW_TEMP: return temp + " K";
+            case ROW_AB: return (shiftAB > 0 ? "B+" : shiftAB < 0 ? "A+" : "") + Math.abs(shiftAB);
+            case ROW_GM: return (shiftGM > 0 ? "M+" : shiftGM < 0 ? "G+" : "") + Math.abs(shiftGM);
+            default: return MATRIX_SCALES[matrixIdx] == 0 ? "off" : "identity x" + MATRIX_SCALES[matrixIdx];
+        }
+    }
+
+    private int[] sliderRange() {   // {max, progress}
+        switch (row) {
+            case ROW_CURVE: return new int[]{CURVE_TOPS.length - 1, curveIdx};
+            case ROW_TEMP: return new int[]{(9900 - 2500) / 100, (temp - 2500) / 100};
+            case ROW_AB: return new int[]{64, shiftAB + 32};
+            case ROW_GM: return new int[]{64, shiftGM + 32};
+            default: return new int[]{MATRIX_SCALES.length - 1, matrixIdx};
+        }
+    }
+
+    private void setRowValueFromSlider(int p) {
+        if (state != LIVE) return;
+        switch (row) {
+            case ROW_CURVE: curveIdx = p; break;
+            case ROW_TEMP: temp = 2500 + 100 * p; break;
+            case ROW_AB: shiftAB = p - 32; break;
+            case ROW_GM: shiftGM = p - 32; break;
+            default: matrixIdx = p; break;
+        }
+        applyRow();
+    }
+
+    private void stepRow(int dir) {
+        switch (row) {
+            case ROW_CURVE: curveIdx = clamp(curveIdx + dir, 0, CURVE_TOPS.length - 1); break;
+            case ROW_TEMP: temp = clamp(temp + 100 * dir, 2500, 9900); break;
+            case ROW_AB: shiftAB = clamp(shiftAB + dir, -32, 32); break;
+            case ROW_GM: shiftGM = clamp(shiftGM + dir, -32, 32); break;
+            default: matrixIdx = clamp(matrixIdx + dir, 0, MATRIX_SCALES.length - 1); break;
+        }
+        applyRow();
+    }
+
+    private static int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+    private void refreshRow() {
+        final String label = "[" + (row + 1) + "/" + ROW_NAMES.length + "] " + ROW_NAMES[row] + ": " + rowValueText(row);
+        final int[] r = sliderRange();
+        ui.post(new Runnable() {
+            public void run() {
+                rowLabel.setText(label);
+                sliderUpdating = true;
+                slider.setMax(r[0]);
+                slider.setProgress(r[1]);
+                sliderUpdating = false;
+            }
+        });
+        updateStatusLine();
+    }
+
+    private void updateStatusLine() {
+        setStatus(LIVE, (positive ? "POSITIVE" : "NEGATIVE") + " | top " + CURVE_TOPS[curveIdx]
+                + (wbTouched ? " | " + temp + "K" : "") + (shiftTouched ? " | shift " + rowValueText(ROW_AB) + "/" + rowValueText(ROW_GM) : "")
+                + (matrixTouched ? " | matrix " + rowValueText(ROW_MATRIX) : ""));
+    }
+
+    /** Take a picture with the current curve. Is the saved JPEG a positive? (the ARW never is) */
+    private void capture() {
+        if (cameraEx == null) return;
+        try {
+            final Camera cam = cameraEx.getNormalCamera();
+            out("    " + now() + "  CAPTURE with curve " + (positive ? "POSITIVE" : "NEGATIVE") + " top=" + CURVE_TOPS[curveIdx]);
+            setStatus(LIVE, "Capturing...");
+            cam.takePicture(null, null, null);
+            ui.postDelayed(new Runnable() {
+                public void run() {
+                    try { cam.startPreview(); } catch (Throwable t) { err("restart preview after capture", t); }
+                    out("    newest file after capture: " + newestDcimFile());
+                    updateStatusLine();
+                }
+            }, 3000);
+        } catch (Throwable t) {
+            err("capture", t);
+        }
+    }
+
+    private String newestDcimFile() {
+        File best = null;
+        File[] sub = new File(Environment.getExternalStorageDirectory(), "DCIM").listFiles();
+        if (sub != null) for (File d : sub) {
+            File[] fs = d.listFiles();
+            if (fs != null) for (File f : fs) if (best == null || f.lastModified() > best.lastModified()) best = f;
+        }
+        return best == null ? "none" : best.getAbsolutePath();
+    }
+
+    /** Undo everything: settings back (read back), our curve off and released, camera released. */
     private synchronized void restoreCamera() {
         if (cameraEx == null) return;
         long t0 = System.currentTimeMillis();
+        try {
+            if (!savedParams.isEmpty() && (wbTouched || shiftTouched || matrixTouched)) {
+                Camera cam = cameraEx.getNormalCamera();
+                Camera.Parameters p = cam.getParameters();
+                for (Map.Entry<String, String> e : savedParams.entrySet()) if (e.getValue() != null) p.set(e.getKey(), e.getValue());
+                cam.setParameters(p);
+                Camera.Parameters r = cam.getParameters();
+                StringBuilder s = new StringBuilder("    settings restored:");
+                for (Map.Entry<String, String> e : savedParams.entrySet()) {
+                    String got = r.get(e.getKey());
+                    boolean ok = e.getValue() == null ? got == null : e.getValue().equals(got);
+                    s.append(' ').append(e.getKey()).append(ok ? "=ok" : "=MISMATCH(" + got + " vs " + e.getValue() + ")");
+                }
+                out(s.toString());
+            }
+        } catch (Throwable t) { err("restore: settings", t); }
         try { cameraEx.setExtendedGammaTable(null); } catch (Throwable t) { err("restore: table off", t); }
         if (activeTable != null) {
             try { activeTable.release(); } catch (Throwable t) { err("restore: release table", t); }
@@ -445,6 +581,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try { cameraEx.getNormalCamera().stopPreview(); } catch (Throwable t) { err("restore: stopPreview", t); }
         try { cameraEx.release(); } catch (Throwable t) { err("restore: camera release", t); }
         cameraEx = null;
+        wbTouched = shiftTouched = matrixTouched = false;
         out("    camera restored and released in " + (System.currentTimeMillis() - t0) + " ms, " + now());
     }
 
@@ -452,37 +589,27 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private void onEnterAction() {
         if (state == READY) {
             state = LIVE;
-            new Thread(new Runnable() { public void run() { startExplorer(); } }).start();
+            new Thread(new Runnable() { public void run() { startLive(); } }).start();
         } else if (state == LIVE) {
-            if (!usingDefault) inverted = !inverted;
-            applyCandidate();
+            positive = !positive;
+            applyCurve();
         } else {
             out("centre ignored: still working");
         }
     }
 
-    private void onNextAction() {
-        if (state != LIVE) return;
-        candidate = (candidate + 1) % CAND.length;
-        applyCandidate();
-    }
-
-    private void onPrevAction() {
-        if (state != LIVE) return;
-        candidate = (candidate + CAND.length - 1) % CAND.length;
-        applyCandidate();
-    }
-
-    private void onUpAction() {
-        if (state == LIVE) useCameraDefault();
-    }
+    private void onNextAction() { if (state == LIVE) stepRow(+1); }
+    private void onPrevAction() { if (state == LIVE) stepRow(-1); }
+    private void onUpAction() { if (state == LIVE) { row = (row + ROW_NAMES.length - 1) % ROW_NAMES.length; refreshRow(); } }
+    private void onDownAction() { if (state == LIVE) { row = (row + 1) % ROW_NAMES.length; refreshRow(); } }
+    private void onShutterAction() { if (state == LIVE) capture(); else out("capture ignored: not in live view"); }
 
     private void onMenuAction() {
-        if (state == LIVE) {                     // leave the explorer, stay in the app
-            out("leaving curve explorer");
+        if (state == LIVE) {
+            out("leaving live view");
             restoreCamera();
-            showLog(true);
-            setStatus(READY, "DONE. Centre = curve explorer again, MENU = exit");
+            showLive(false);
+            setStatus(READY, "DONE. Centre = live view again, MENU = exit");
             return;
         }
         long t = System.currentTimeMillis();
@@ -506,25 +633,21 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         if (!dial) out("key " + keyCode + " scan " + scan);
         if (isMenuOrBack(scan) || keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_BACK) { onMenuAction(); return true; }
         if (isEnter(scan) || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) { onEnterAction(); return true; }
+        if (isShutter(scan)) { onShutterAction(); return true; }
+        if (isHalfPress(scan)) return true;
         if (isNext(scan) || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { onNextAction(); return true; }
         if (isPrev(scan) || keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { onPrevAction(); return true; }
         if (isUp(scan) || keyCode == KeyEvent.KEYCODE_DPAD_UP) { onUpAction(); return true; }
+        if (isDown(scan) || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) { onDownAction(); return true; }
         return super.onKeyDown(keyCode, e);
     }
 
-    private int touchLogs;
-
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        int a = ev.getAction() & MotionEvent.ACTION_MASK;
-        if ((a == MotionEvent.ACTION_DOWN || a == MotionEvent.ACTION_UP) && touchLogs < 200) {
-            touchLogs++;
-            out("touch " + (a == MotionEvent.ACTION_DOWN ? "down" : "up") + " x=" + (int) ev.getX() + " y=" + (int) ev.getY());
-        }
-        return super.dispatchTouchEvent(ev);
+        return super.dispatchTouchEvent(ev);   // probe 3 confirmed touch; buttons/slider log their own use
     }
 
-    // ------------------------------------------------------------------ lifecycle (logged: probe 2 hung on exit)
+    // ------------------------------------------------------------------ lifecycle
     public void surfaceCreated(SurfaceHolder h) { surfaceReady = true; }
     public void surfaceChanged(SurfaceHolder h, int f, int w, int ht) {}
     public void surfaceDestroyed(SurfaceHolder h) { surfaceReady = false; }
@@ -534,13 +657,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         out("onPause, " + now());
         restoreCamera();
         super.onPause();
-        out("onPause done");
-    }
-
-    @Override
-    protected void onStop() {
-        out("onStop, " + now());
-        super.onStop();
     }
 
     @Override

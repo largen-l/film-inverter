@@ -93,6 +93,16 @@ public abstract class SonyActivity extends Activity {
 
     protected static boolean isUp(int scanCode) { return scanCode == ScalarInput.ISV_KEY_UP; }
 
+    protected static boolean isDown(int scanCode) { return scanCode == ScalarInput.ISV_KEY_DOWN; }
+
+    /** Shutter fully pressed. */
+    protected static boolean isShutter(int scanCode) { return scanCode == ScalarInput.ISV_KEY_S2; }
+
+    /** Shutter half-press (focus); swallowed so the camera does not act on it behind the app. */
+    protected static boolean isHalfPress(int scanCode) {
+        return scanCode == ScalarInput.ISV_KEY_S1_1 || scanCode == ScalarInput.ISV_KEY_S1_2;
+    }
+
     protected static boolean isMenuOrBack(int scanCode) {
         return scanCode == ScalarInput.ISV_KEY_MENU || scanCode == ScalarInput.ISV_KEY_SK1
             || scanCode == ScalarInput.ISV_KEY_DELETE || scanCode == ScalarInput.ISV_KEY_SK2;
