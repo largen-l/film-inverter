@@ -34,7 +34,9 @@ Done:
   buttons + every touch logged). Results in `docs/api-usage/probe2.md`: the tone curve applies to live
   view instantly; table format unknown (2048 bytes, uninitialised by default); exit froze the camera.
 - **Probe 3** (0.3-probe) installed 2026-11-19: interactive curve-format explorer (13 layouts,
-  plain/inverted), tables released, positives to `/FILMINV/`, exit steps logged. Results pending.
+  plain/inverted), tables released, positives to `/FILMINV/`, exit steps logged. Results in
+  `docs/api-usage/probe3.md`: **gamma table = 1×1024 u16 LE, 10-bit output; inverted live view works**
+  (blue cast: orange mask not yet compensated). Touch works. Exit clean. Long filenames fail (8.3 only?).
 - **Linux**: `tools/*.sh` twins of the PowerShell scripts (toolchain-linux/, .venv-linux/, PMCA-RE run
   from source). **Not yet run on Linux.** WSL2 can't start on this PC (Proxmox VM without nested
   virtualisation); the owner can provide SSH to a Linux VM/LXC for testing.
