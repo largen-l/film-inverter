@@ -37,6 +37,18 @@ tools\build.ps1                                              # build\FilmInverte
 tools\install.ps1 build\FilmInverter\FilmInverter.apk          # camera in Mass Storage USB mode
 ```
 
+## Quick start (Linux, x86_64)
+
+Same steps with the bash twins of the scripts. They use `toolchain-linux/` and `.venv-linux/`, so a
+checkout can be shared with Windows (e.g. WSL). Needs `curl unzip tar python3 python3-venv libusb-1.0-0`.
+
+```bash
+tools/first-run.sh                                           # setup + both builds + engine tests
+tools/build.sh                                               # build/FilmInverter/FilmInverter.apk
+sudo cp tools/linux/99-sony-camera.rules /etc/udev/rules.d/  # once: USB access to the camera
+tools/install.sh build/FilmInverter/FilmInverter.apk         # camera in Mass Storage USB mode
+```
+
 Desktop engine:
 
 ```powershell

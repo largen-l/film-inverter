@@ -1,0 +1,3 @@
+# Let normal users talk to Sony cameras over USB (needed by Sony-PMCA-RE / tools/install.sh).
+# Install: sudo cp tools/linux/99-sony-camera.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules
+SUBSYSTEM=="usb", ATTR{idVendor}=="054c", MODE="0666"

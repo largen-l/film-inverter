@@ -28,6 +28,16 @@ Done:
 - PMCADemo comparison done (step 3): `SonyActivity` (AppInfoReceive broadcast, colour depth, Sony scan
   codes) + `ExitCompletedReceiver`, adapted from PMCADemo (MIT). No uses-library entries needed.
 
+- **Probe 2** (0.2-probe, `com.filminverter`) installed on the camera 2026-11-19: busy/ready status,
+  RAW+JPEG pair only, Sony time, CameraEx live view tests (preview frames, gamma table read → saved to
+  `FIGAMMA.BIN`, R/B matrix swap, two inverted gamma variants, all restored), touch test (on-screen
+  buttons + every touch logged). Results pending.
+- **Linux**: `tools/*.sh` twins of the PowerShell scripts (toolchain-linux/, .venv-linux/, PMCA-RE run
+  from source). **Not yet run on Linux.** WSL2 can't start on this PC (Proxmox VM without nested
+  virtualisation); the owner can provide SSH to a Linux VM/LXC for testing.
+- Owner wants the app **touch-friendly wherever possible** (at least sliders etc.). Probe 2 tells us
+  whether the a6500 passes touches to apps; design UI for both buttons/dials and touch.
+
 ## Environment
 
 - Windows PC, project at `A:\auto-film-scan` (local folder keeps the old name; the project is now

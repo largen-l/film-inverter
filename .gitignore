@@ -1,5 +1,6 @@
 # toolchain, downloads, decompiled third-party code (never commit Sony's code)
 toolchain/
+toolchain-linux/
 # test scans and outputs (large, personal)
 scans/*
 !scans/README.md
@@ -10,6 +11,7 @@ build/
 *.keystore
 # python
 .venv/
+.venv-linux/
 __pycache__/
 *.pyc
 .pytest_cache/
