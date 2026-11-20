@@ -16,7 +16,14 @@ Done (written and tested in a cloud sandbox, NOT yet run on Windows or the camer
 - `app/NegInverter/src/com/autofilmscan/MainActivity.java`: **M0 probe app** (never compiled against
   android.jar yet; the sandbox had no Android SDK). Writes `AFSPROBE.TXT` to the card root.
 - `tools/*.ps1`: setup / build (aapt → javac → d8 → zipalign → apksigner v1, no Gradle) / install /
-  decompile / publish-github. **Untested on Windows.** Expect small fixes.
+  decompile / publish-github. setup/build/first-run/publish **work on Windows** (2026-11-19): PMCADemo
+  and NegInverter both build; NegInverter.apk verifies v1-signed for API 10. install/decompile untested.
+  Build notes: OpenMemories stubs are Jasmin `.j` (assembled with jasmin 2.4); the framework compiles
+  against android-16; d8/apksigner are run as jars (their .bat wrappers need the legacy SDK `tools/`).
+  git/gh are portable copies in `toolchain\` (on PATH via env.ps1).
+- Repo: https://github.com/largen-l/auto-film-scan, **private** until the first on-camera test works.
+- PMCADemo comparison done (step 3): `SonyActivity` (AppInfoReceive broadcast, colour depth, Sony scan
+  codes) + `ExitCompletedReceiver`, adapted from PMCADemo (MIT). No uses-library entries needed.
 
 ## Environment
 
@@ -27,6 +34,8 @@ Done (written and tested in a cloud sandbox, NOT yet run on Windows or the camer
   Sony's **Multiple Exposure** APK (and others) can be decompiled locally with `tools\decompile.ps1`.
 
 ## Next steps (in order)
+
+Steps 1–4 are done; continue at step 5.
 
 1. `tools\setup.ps1`, fix anything that breaks (URLs, paths, archive layouts).
 2. `tools\build.ps1 -App PMCADemo` and fix build.ps1 until it produces an APK. This validates the
