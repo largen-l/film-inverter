@@ -44,7 +44,16 @@ Done:
   with camera WB before the matrix. Fully automatic results on the cat frame match the owner's Lightroom
   edit. Java == Python bit-identical on `scans/parity01` (`NegEngineDesktopTest <dir> auto <py out>`).
   Installed as 0.5-probe.
-- **Next: live view + capture WB/levels** (orange mask via WB or RGB matrix, levels in the curve).
+- **Probes 0.6–0.11** (`docs/api-usage/probe5-8.md`): capture works repeatedly (cancelTakePicture), RAW+JPEG forced
+  in live view, levels/gamma rows in the curve (owner: full range, gamma 0.85), WB 2700 K + B+2 looked right
+  live but is not yet captured, matrix is live and strong (patterns 1–8), **two reused GammaTables per session**
+  (many tables hung the camera after exit), Flip on/off via reverse-landscape. 0.11 (unflip on exit: the flip
+  leaked into Sony menus) is built but **not yet installed**.
+- Repo is **public** since 2026-11-20 (history scanned: no personal data or secrets). Keep it that way.
+- UI: the owner is choosing between 8 concept mockups (refined minimal, camera-native menus, Material, glass,
+  enlarger head, light table, scope HUD, safelight) on a private design canvas. All must stay plain Android 4.1
+  views over the hardware live view: no live blur, no per-frame redraw, histograms from captures only.
+- **Next:** automatic orange-mask removal (measure the base, set WB/matrix), then the chosen UI.
 - **Linux**: `tools/*.sh` twins of the PowerShell scripts (toolchain-linux/, .venv-linux/, PMCA-RE run
   from source). **Not yet run on Linux.** WSL2 can't start on this PC (Proxmox VM without nested
   virtualisation); the owner can provide SSH to a Linux VM/LXC for testing.
