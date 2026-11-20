@@ -25,4 +25,11 @@ fi
 PY="$TC/pmca-venv/bin/python"
 [[ -x "$PY" ]] || { echo "PMCA-RE venv missing - run tools/setup.sh" >&2; exit 1; }
 cd "$TC/src/Sony-PMCA-RE"   # pmca-console.py imports its package from here
-exec "$PY" pmca-console.py install -f "$APK"
+# The camera re-enumerates when it switches to app-install mode; through a VM's USB passthrough that can
+# take longer than pmca-console waits ("Operation timed out", exit code 0). One retry finds it.
+for try in 1 2; do
+  out=$("$PY" pmca-console.py install -f "$APK" 2>&1 | tee /dev/stderr) || true
+  grep -q 'Operation timed out' <<<"$out" || break
+  [[ $try -eq 1 ]] && { echo; echo "(retrying once: the camera was still switching modes)"; echo; sleep 5; }
+done
+grep -q 'Task completed successfully' <<<"$out"

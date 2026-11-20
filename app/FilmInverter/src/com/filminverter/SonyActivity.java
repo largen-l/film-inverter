@@ -79,6 +79,20 @@ public abstract class SonyActivity extends Activity {
 
     protected static boolean isEnter(int scanCode) { return scanCode == ScalarInput.ISV_KEY_ENTER; }
 
+    /** Right key or either dial turned clockwise. */
+    protected static boolean isNext(int scanCode) {
+        return scanCode == ScalarInput.ISV_KEY_RIGHT || scanCode == ScalarInput.ISV_DIAL_1_CLOCKWISE
+            || scanCode == ScalarInput.ISV_DIAL_2_CLOCKWISE;
+    }
+
+    /** Left key or either dial turned counter-clockwise. */
+    protected static boolean isPrev(int scanCode) {
+        return scanCode == ScalarInput.ISV_KEY_LEFT || scanCode == ScalarInput.ISV_DIAL_1_COUNTERCW
+            || scanCode == ScalarInput.ISV_DIAL_2_COUNTERCW;
+    }
+
+    protected static boolean isUp(int scanCode) { return scanCode == ScalarInput.ISV_KEY_UP; }
+
     protected static boolean isMenuOrBack(int scanCode) {
         return scanCode == ScalarInput.ISV_KEY_MENU || scanCode == ScalarInput.ISV_KEY_SK1
             || scanCode == ScalarInput.ISV_KEY_DELETE || scanCode == ScalarInput.ISV_KEY_SK2;
