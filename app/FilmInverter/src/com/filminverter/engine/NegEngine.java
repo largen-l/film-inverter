@@ -77,6 +77,7 @@ public final class NegEngine {
     static final double FRAME_LINE_FRAC = 0.6, FRAME_MAX_BORDER = 0.25, FRAME_INSET = 0.015;
     static final double FRAME_BRIGHT_REL = 0.9, FRAME_DARK = 0.004, CLIP = 0.985, HOLE_RATIO = 1.25;
     static final double FRAME_LINE_REL = 0.85, FRAME_GAP = 0.03;
+    static final int FRAME_MAX_SIDE = 600;   // analyse a subsampled copy (probe 0.5 took 11 s at 1500 px)
     private static final int LUM_BINS = 4096;
 
     /** Picture area (x1/y1 exclusive) and the film base found in the border around it (null if none). */
@@ -172,6 +173,19 @@ public final class NegEngine {
      * Levels must come from the picture area only (see analyse_frame() in negengine.py for the why).
      */
     public static Frame analyseFrame(int[] px, int w, int h) {
+        int s = Math.max(1, (int) Math.ceil(Math.max(w, h) / (double) FRAME_MAX_SIDE));
+        if (s == 1) return analyseSmall(px, w, h);
+        int sw = (w + s - 1) / s, sh = (h + s - 1) / s;          // same pixels as numpy lin[::s, ::s]
+        int[] small = new int[sw * sh];
+        for (int y = 0; y < sh; y++)
+            for (int x = 0; x < sw; x++) small[y * sw + x] = px[(y * s) * w + x * s];
+        Frame f = analyseSmall(small, sw, sh);
+        f.x0 *= s; f.y0 *= s;
+        f.x1 = Math.min(w, f.x1 * s); f.y1 = Math.min(h, f.y1 * s);
+        return f;
+    }
+
+    private static Frame analyseSmall(int[] px, int w, int h) {
         // reference brightness: 99th percentile luminance of the frame centre (always picture)
         int[] hist = new int[LUM_BINS];
         long n = 0;

@@ -121,6 +121,7 @@ CLIP = 0.985              # any channel at or above this counts as clipped
 HOLE_RATIO = 1.25         # bright border pixels spanning more than this (p95/p5) contain sprocket holes
 FRAME_LINE_REL = 0.85     # a bright border line's median luminance must be >= 85% of the brightest edge line's
 FRAME_GAP = 0.03          # tolerate up to 3% of the side of non-border lines (edge markings) while peeling
+FRAME_MAX_SIDE = 600      # analyse a subsampled copy at most this long (the camera took 11 s at 1500 px)
 
 
 @dataclasses.dataclass
@@ -175,7 +176,21 @@ def analyse_frame(lin: np.ndarray) -> FrameInfo:
     or "unlit"; picture content mostly is neither. Rows/columns that are mostly border are peeled off
     from each edge. Levels must come from the picture area only: the unlit edge alone drags the white
     points to density ~2.5 and turns everything blue (probe 2 cat frame).
+
+    Works on every s-th pixel (s chosen so the long side is <= FRAME_MAX_SIDE) and scales the result back;
+    NegEngine.analyseFrame subsamples the same way, so both engines give identical answers.
     """
+    full_h, full_w, _ = lin.shape
+    s = max(1, math.ceil(max(full_h, full_w) / FRAME_MAX_SIDE))
+    info = _analyse_small(lin[::s, ::s])
+    if s == 1:
+        return info
+    x0, y0, x1, y1 = info.rect
+    return FrameInfo(rect=(x0 * s, y0 * s, min(full_w, x1 * s), min(full_h, y1 * s)),
+                     border_found=info.border_found, base=info.base)
+
+
+def _analyse_small(lin: np.ndarray) -> FrameInfo:
     h, w, _ = lin.shape
     lum = lin @ LUM
     mx = lin.max(axis=2)

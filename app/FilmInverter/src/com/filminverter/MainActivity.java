@@ -161,7 +161,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         setContentView(root);
 
         setStatus(BUSY, "WORKING... please wait");
-        out("=== Film Inverter probe 4, " + now() + " ===");
+        out("=== Film Inverter probe 5, " + now() + " ===");
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
     }
 
@@ -284,6 +284,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private File pickJpeg() {
         File dcim = new File(Environment.getExternalStorageDirectory(), "DCIM");
         File best = null;
+        java.util.Set<String> skip = positiveCaptures();
         File[] sub = dcim.listFiles();
         if (sub != null) {
             for (File d : sub) {
@@ -292,7 +293,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 if (fs == null) continue;
                 for (File f : fs) {
                     String n = f.getName();
-                    if (!n.toUpperCase().endsWith(".JPG")) continue;
+                    if (!n.toUpperCase().endsWith(".JPG") || skip.contains(n.toUpperCase())) continue;
                     File arw = new File(d, n.substring(0, n.length() - 4) + ".ARW");
                     if (arw.exists() && (best == null || f.lastModified() > best.lastModified())) best = f;
                 }
@@ -528,34 +529,77 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 + (matrixTouched ? " | matrix " + rowValueText(ROW_MATRIX) : ""));
     }
 
-    /** Take a picture with the current curve. Is the saved JPEG a positive? (the ARW never is) */
+    private volatile boolean capturing;
+
+    /**
+     * Take a picture with the current curve: with the POSITIVE curve the saved JPEG is a full-res positive
+     * (probe 4), the ARW stays the negative. Ignored while the previous capture is still being saved
+     * (probe 5: a second takePicture within ~3 s throws "takePicture failed").
+     */
     private void capture() {
         if (cameraEx == null) return;
+        if (capturing) { out("    capture ignored: previous capture still saving"); return; }
+        capturing = true;
         try {
             final Camera cam = cameraEx.getNormalCamera();
-            out("    " + now() + "  CAPTURE with curve " + (positive ? "POSITIVE" : "NEGATIVE") + " top=" + CURVE_TOPS[curveIdx]);
-            setStatus(LIVE, "Capturing...");
+            final boolean pos = positive;
+            out("    " + now() + "  CAPTURE with curve " + (pos ? "POSITIVE" : "NEGATIVE") + " top=" + CURVE_TOPS[curveIdx]);
+            setStatus(LIVE, "Capturing... wait");
             cam.takePicture(null, null, null);
             ui.postDelayed(new Runnable() {
                 public void run() {
-                    try { cam.startPreview(); } catch (Throwable t) { err("restart preview after capture", t); }
-                    out("    newest file after capture: " + newestDcimFile());
-                    updateStatusLine();
+                    try {
+                        if (cameraEx == null) return;                 // left live view meanwhile
+                        try { cam.startPreview(); } catch (Throwable t) { err("restart preview after capture", t); }
+                        File jpg = newestDcimJpeg();
+                        out("    newest JPEG after capture: " + (jpg == null ? "none" : jpg.getAbsolutePath()));
+                        if (pos && jpg != null) rememberPositiveCapture(jpg.getName());
+                        updateStatusLine();
+                    } finally {
+                        capturing = false;
+                    }
                 }
             }, 3000);
         } catch (Throwable t) {
+            capturing = false;
             err("capture", t);
         }
     }
 
-    private String newestDcimFile() {
+    private File newestDcimJpeg() {
         File best = null;
         File[] sub = new File(Environment.getExternalStorageDirectory(), "DCIM").listFiles();
         if (sub != null) for (File d : sub) {
             File[] fs = d.listFiles();
-            if (fs != null) for (File f : fs) if (best == null || f.lastModified() > best.lastModified()) best = f;
+            if (fs != null) for (File f : fs)
+                if (f.getName().toUpperCase().endsWith(".JPG") && (best == null || f.lastModified() > best.lastModified())) best = f;
         }
-        return best == null ? "none" : best.getAbsolutePath();
+        return best;
+    }
+
+    /** JPEGs captured with the POSITIVE curve are already positives: list them so the engine skips them. */
+    private static final String CAPTURED_LIST = "FILMINV/CAPTURED.TXT";
+
+    private void rememberPositiveCapture(String name) {
+        try {
+            File f = new File(Environment.getExternalStorageDirectory(), CAPTURED_LIST);
+            f.getParentFile().mkdirs();
+            FileWriter fw = new FileWriter(f, true);
+            fw.write(name.toUpperCase() + "\n");
+            fw.close();
+        } catch (Throwable t) { err("remember capture", t); }
+    }
+
+    private java.util.Set<String> positiveCaptures() {
+        java.util.Set<String> s = new java.util.HashSet<String>();
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(
+                    new File(Environment.getExternalStorageDirectory(), CAPTURED_LIST)));
+            String line;
+            while ((line = r.readLine()) != null) if (line.trim().length() > 0) s.add(line.trim().toUpperCase());
+            r.close();
+        } catch (Throwable ignored) {}
+        return s;
     }
 
     /** Undo everything: settings back (read back), our curve off and released, camera released. */
