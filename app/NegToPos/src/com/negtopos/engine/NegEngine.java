@@ -1,4 +1,4 @@
-package com.autofilmscan.engine;
+package com.negtopos.engine;
 
 /**
  * Colour-negative inversion for 8-bit (camera JPEG) input.

@@ -5,7 +5,7 @@
   The AppInfoReceive broadcast is sent from SonyActivity.onResume.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.autofilmscan"
+    package="com.negtopos"
     android:versionCode="1"
     android:versionName="0.1-probe">
 
@@ -15,7 +15,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
     <application
-        android:label="Neg Inverter"
+        android:label="Neg to Pos"
         android:icon="@android:drawable/sym_def_app_icon">
         <receiver android:name=".ExitCompletedReceiver">
             <intent-filter>
@@ -25,7 +25,7 @@
         </receiver>
         <activity
             android:name=".MainActivity"
-            android:label="Neg Inverter"
+            android:label="Neg to Pos"
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
             <intent-filter>

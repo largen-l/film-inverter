@@ -1,4 +1,4 @@
-package com.autofilmscan;
+package com.negtopos;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
@@ -18,7 +18,7 @@ import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.autofilmscan.engine.NegEngine;
+import com.negtopos.engine.NegEngine;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -30,14 +30,14 @@ import java.util.Comparator;
 
 /**
  * M0 probe app. Runs the feasibility checks from the plan on the real camera and
- * writes everything to /sdcard/AFSPROBE.TXT (camera card root: AFSPROBE.TXT).
+ * writes everything to /sdcard/NTPPROBE.TXT (camera card root: NTPPROBE.TXT).
  *
  * On launch (safe, read-mostly):
  *   1. device + memory info (heap limit decides tiling strategy)
  *   2. Sony API reconnaissance: which com.sony.scalar classes exist, their methods
  *   3. listing of /system/app and /system/framework (Sony built-in apps to decompile)
  *   4. decode benchmark on the newest JPEG in DCIM (full / 1/2 / 1/4, region decoder)
- *   5. real inversion of that JPEG with NegEngine (auto base) -> DCIM/AFSTEST/*_POS.JPG
+ *   5. real inversion of that JPEG with NegEngine (auto base) -> DCIM/NTPTEST/*_POS.JPG
  *      (then check whether the camera's own playback shows the file)
  * On pressing the centre/enter button:
  *   6. live preview-frame probe via android.hardware.Camera (risky; separate on purpose)
@@ -55,7 +55,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     @Override
     protected void onCreate(Bundle b) {
         try {
-            log = new PrintWriter(new FileWriter(new File(Environment.getExternalStorageDirectory(), "AFSPROBE.TXT"), true));
+            log = new PrintWriter(new FileWriter(new File(Environment.getExternalStorageDirectory(), "NTPPROBE.TXT"), true));
         } catch (Exception e) {
             log = null;
         }
@@ -75,7 +75,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         root.addView(scroll);
         setContentView(root);
 
-        out("=== Neg Inverter probe " + new java.util.Date() + " ===");
+        out("=== Neg to Pos probe " + new java.util.Date() + " ===");
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
     }
 
@@ -100,7 +100,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     /**
      * Any crash the probes do not catch themselves (UI thread, lifecycle, a missing Sony class) is
-     * written to AFSPROBE.TXT with its stack trace before the app dies, then handed to the default handler.
+     * written to NTPPROBE.TXT with its stack trace before the app dies, then handed to the default handler.
      */
     private void installCrashLogger() {
         final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
@@ -108,7 +108,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             public void uncaughtException(Thread th, Throwable t) {
                 try {
                     PrintWriter w = log != null ? log : new PrintWriter(new FileWriter(
-                            new File(Environment.getExternalStorageDirectory(), "AFSPROBE.TXT"), true));
+                            new File(Environment.getExternalStorageDirectory(), "NTPPROBE.TXT"), true));
                     w.println("!! CRASH in thread " + th.getName() + " at " + new java.util.Date() + ": " + t);
                     t.printStackTrace(w);
                     w.flush();
@@ -228,7 +228,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         File[] sub = dcim.listFiles();
         if (sub == null) return null;
         for (File d : sub) {
-            if (!d.isDirectory() || d.getName().equals("AFSTEST")) continue;
+            if (!d.isDirectory() || d.getName().equals("NTPTEST")) continue;
             File[] fs = d.listFiles();
             if (fs == null) continue;
             for (File f : fs) {
@@ -311,7 +311,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         Bitmap outBm = bm.isMutable() ? bm : bm.copy(Bitmap.Config.ARGB_8888, true);
         if (outBm != bm) bm.recycle();
         outBm.setPixels(px, 0, w, 0, 0, w, h);
-        File dir = new File(Environment.getExternalStorageDirectory(), "DCIM/AFSTEST");
+        File dir = new File(Environment.getExternalStorageDirectory(), "DCIM/NTPTEST");
         dir.mkdirs();
         File dst = new File(dir, jpg.getName().replaceAll("(?i)\\.JPG$", "") + "_POS.JPG");
         FileOutputStream fo = new FileOutputStream(dst);
@@ -323,7 +323,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 + " ms, encode+write " + (t4 - t3) + " ms");
         out("    wrote " + dst.getAbsolutePath());
         out("    profile " + NegEngine.toJson(p));
-        out("    -> CHECK: does the camera's playback show DCIM/AFSTEST/" + dst.getName() + "?");
+        out("    -> CHECK: does the camera's playback show DCIM/NTPTEST/" + dst.getName() + "?");
     }
 
     /** Film base guess: per-channel 99.5th percentile of pixels with no clipped channel. */

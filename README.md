@@ -1,4 +1,4 @@
-# auto-film-scan
+# Negative to Positive
 
 In-camera **colour negative inversion** for the **Sony a6500**, built as a PlayMemories Camera App (PMCA),
 installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a desktop reference engine.
@@ -21,8 +21,8 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 | Path | What |
 |---|---|
 | `engine/` | Python reference engine (`negengine.py`) + batch CLI (`invert_roll.py`) + tests |
-| `app/NegInverter/` | The camera app (Java, Android 2.3 / API 10). Currently the M0 probe build |
-| `app/NegInverter/src/.../engine/NegEngine.java` | LUT-based port of the engine for 8-bit camera JPEGs |
+| `app/NegToPos/` | The camera app (Java, Android 2.3 / API 10). Currently the M0 probe build |
+| `app/NegToPos/src/.../engine/NegEngine.java` | LUT-based port of the engine for 8-bit camera JPEGs |
 | `tools/` | Windows scripts: `setup.ps1`, `build.ps1`, `install.ps1`, `decompile.ps1`, `publish-github.ps1` |
 | `docs/` | Plan, checkpoints, API findings |
 | `toolchain/`, `scans/`, `build/` | Local only (git-ignored) |
@@ -33,8 +33,8 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 powershell -ExecutionPolicy Bypass -File tools\setup.ps1     # JDK, Android SDK (API 10), jadx, PMCA-RE, sources
 . .\toolchain\env.ps1
 tools\build.ps1 -App PMCADemo                                # toolchain sanity check
-tools\build.ps1                                              # build\NegInverter\NegInverter.apk
-tools\install.ps1 build\NegInverter\NegInverter.apk          # camera in Mass Storage USB mode
+tools\build.ps1                                              # build\NegToPos\NegToPos.apk
+tools\install.ps1 build\NegToPos\NegToPos.apk          # camera in Mass Storage USB mode
 ```
 
 Desktop engine:

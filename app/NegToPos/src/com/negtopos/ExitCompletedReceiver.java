@@ -1,4 +1,4 @@
-package com.autofilmscan;
+package com.negtopos;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;

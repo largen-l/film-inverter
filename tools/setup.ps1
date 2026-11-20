@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  One-time toolchain setup for auto-film-scan, everything under <repo>\toolchain (git-ignored).
+  One-time toolchain setup for Negative to Positive, everything under <repo>\toolchain (git-ignored).
 
 .DESCRIPTION
   Downloads (skips anything already present):
@@ -180,8 +180,8 @@ $envFile = Join-Path $TC 'env.ps1'
 @"
 `$env:JAVA_HOME        = '$TC\jdk'
 `$env:ANDROID_SDK_ROOT = '$sdk'
-`$env:AFS_BUILD_TOOLS  = '$sdk\build-tools\30.0.3'
-`$env:AFS_ANDROID_JAR  = '$sdk\platforms\android-10\android.jar'
+`$env:NTP_BUILD_TOOLS  = '$sdk\build-tools\30.0.3'
+`$env:NTP_ANDROID_JAR  = '$sdk\platforms\android-10\android.jar'
 `$env:Path = "`$env:JAVA_HOME\bin;$sdk\platform-tools;$TC\jadx\bin;$TC\pmca;`$env:Path;$TC\git\cmd;$TC\gh\bin"
 "@ | Set-Content -Encoding UTF8 $envFile
 

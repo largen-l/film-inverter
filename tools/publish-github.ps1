@@ -13,7 +13,7 @@
   powershell -ExecutionPolicy Bypass -File tools\publish-github.ps1 -Name a6500-negative-inverter -Private
 #>
 param(
-    [string]$Name = 'auto-film-scan',
+    [string]$Name = 'negative-to-positive',
     [switch]$Private
 )
 $ErrorActionPreference = 'Stop'

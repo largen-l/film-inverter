@@ -4,10 +4,10 @@ Batch-invert a folder of negative scans (the desktop twin of the camera's "Devel
 Examples
 --------
   # auto base + roll-level levels, write positives to <folder>/positives
-  python invert_roll.py A:/auto-film-scan/scans/roll01
+  python invert_roll.py scans/roll01
 
   # base sampled from a rectangle (fractions x0 y0 x1 y1) on frame DSC01234
-  python invert_roll.py A:/auto-film-scan/scans/roll01 --base-frame DSC01234.ARW --base-rect 0.01 0.4 0.03 0.6
+  python invert_roll.py scans/roll01 --base-frame DSC01234.ARW --base-rect 0.01 0.4 0.03 0.6
 
   # reuse a saved profile, punchier, slightly warm
   python invert_roll.py roll01 --profile roll01/roll.json --contrast 1.3 --temp 0.5

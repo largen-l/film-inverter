@@ -54,7 +54,7 @@ The ARW is always the negative (sensor data). XMP sidecar makes it open inverted
 
 | # | Milestone | Done when |
 |---|---|---|
-| M0 | Spikes | probe app run on camera; AFSPROBE.TXT answers: heap, decode speed, Sony classes, preview frames, playback indexing; Multiple Exposure decompiled |
+| M0 | Spikes | probe app run on camera; NTPPROBE.TXT answers: heap, decode speed, Sony classes, preview frames, playback indexing; Multiple Exposure decompiled |
 | M1 | Desktop engine | good positives on 2–3 C-41 stocks from real a6500 scans |
 | M2 | Mode A Develop | card scan, base picker, batch invert, roll profile, full-res strip processing |
 | M3 | Mode B Scan | capture, manual controls, roll lock, instant review, frame counter |

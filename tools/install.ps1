@@ -3,8 +3,8 @@
   Install an APK on the camera with Sony-PMCA-RE (USB, camera in Mass Storage USB mode).
 
 .EXAMPLE
-  tools\install.ps1 build\NegInverter\NegInverter.apk
-  tools\install.ps1 -Adb build\NegInverter\NegInverter.apk   # if Tweak's adb is enabled (faster for iteration)
+  tools\install.ps1 build\NegToPos\NegToPos.apk
+  tools\install.ps1 -Adb build\NegToPos\NegToPos.apk   # if Tweak's adb is enabled (faster for iteration)
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Apk,

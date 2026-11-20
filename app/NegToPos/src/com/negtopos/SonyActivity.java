@@ -1,4 +1,4 @@
-package com.autofilmscan;
+package com.negtopos;
 
 import android.app.Activity;
 import android.content.Intent;
