@@ -73,7 +73,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     // live view state; restoreCamera() undoes everything
     private CameraEx cameraEx;
-    private CameraEx.GammaTable activeTable;
     private final Map<String, String> savedParams = new LinkedHashMap<String, String>();
     private boolean positive = true;
 
@@ -171,7 +170,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         setContentView(root);
 
         setStatus(BUSY, "WORKING... please wait");
-        out("=== Film Inverter probe 6, " + now() + " ===");
+        out("=== Film Inverter probe 8, " + now() + " ===");
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
     }
 
@@ -406,11 +405,38 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         }
     }
 
-    /** Format from probe 3: 1024 x u16 LE, 0..top. Positive = inverted. */
+    /**
+     * Two GammaTable buffers per live-view session, reused (double buffering): write the one not on screen,
+     * then switch to it. Probe 0.7 created and released 98 tables in two minutes and the camera hung after the
+     * app exited; probe 2 leaked 12 and hung the same way. Sessions with a handful of tables exited cleanly.
+     * So: never more than 2 allocations per session, released only after live view has stopped.
+     */
+    private final CameraEx.GammaTable[] tables = new CameraEx.GammaTable[2];
+    private int nextTable;
+    private int tablesCreated;
+
+    /** Coalesce rapid changes (slider drags): apply at most every CURVE_MIN_MS. */
+    private static final long CURVE_MIN_MS = 150;
+    private long lastCurveAt;
+    private boolean curvePending;
+
+    private void requestCurve() {
+        long wait = lastCurveAt + CURVE_MIN_MS - System.currentTimeMillis();
+        if (wait <= 0) { applyCurve(); return; }
+        if (curvePending) return;
+        curvePending = true;
+        ui.postDelayed(new Runnable() {
+            public void run() { curvePending = false; applyCurve(); }
+        }, wait);
+    }
+
+    /** Format from probe 3: 1024 x u16 LE, 0..1023. Positive = inverted. */
     private synchronized void applyCurve() {
         if (cameraEx == null) return;
+        lastCurveAt = System.currentTimeMillis();
         try {
-            CameraEx.GammaTable t = cameraEx.createGammaTable();
+            if (tables[nextTable] == null) { tables[nextTable] = cameraEx.createGammaTable(); tablesCreated++; }
+            CameraEx.GammaTable t = tables[nextTable];
             byte[] b = new byte[t.getSize()];                 // the buffer is uninitialised: fill all of it
             double span = Math.max(8, inHi - inLo), g = gammaX100 / 100.0;
             for (int i = 0; i < 1024 && 2 * i + 1 < b.length; i++) {
@@ -422,10 +448,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             }
             t.write(b);
             cameraEx.setExtendedGammaTable(t);
-            CameraEx.GammaTable old = activeTable;
-            activeTable = t;
-            if (old != null) { try { old.release(); } catch (Throwable r) { err("release old table", r); } }
-            out("    " + now() + "  curve " + curveText());
+            nextTable ^= 1;
+            out("    " + now() + "  curve " + curveText() + " (table " + (nextTable ^ 1) + ", allocated " + tablesCreated + ")");
             updateStatusLine();
         } catch (Throwable t) {
             err("apply curve", t);
@@ -459,7 +483,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     private void applyRow() {
         switch (row) {
-            case ROW_HI: case ROW_LO: case ROW_GAMMA: applyCurve(); break;
+            case ROW_HI: case ROW_LO: case ROW_GAMMA: requestCurve(); break;
             case ROW_TEMP:
                 wbTouched = true;
                 setParams("whitebalance", "color-temp", "color-temperture-white-balance", String.valueOf(temp));
@@ -654,12 +678,22 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 out(s.toString());
             }
         } catch (Throwable t) { err("restore: settings", t); }
+        // Order matters (see the hang notes on `tables`): curve off, let a frame or two pass, stop the preview,
+        // and only then free the table buffers and the camera. Each step is timed in the log.
         try { cameraEx.setExtendedGammaTable(null); } catch (Throwable t) { err("restore: table off", t); }
-        if (activeTable != null) {
-            try { activeTable.release(); } catch (Throwable t) { err("restore: release table", t); }
-            activeTable = null;
-        }
+        out("    restore: curve off at +" + (System.currentTimeMillis() - t0) + " ms");
+        try { Thread.sleep(150); } catch (InterruptedException ignored) {}
         try { cameraEx.getNormalCamera().stopPreview(); } catch (Throwable t) { err("restore: stopPreview", t); }
+        out("    restore: preview stopped at +" + (System.currentTimeMillis() - t0) + " ms");
+        for (int i = 0; i < tables.length; i++) {
+            if (tables[i] != null) {
+                try { tables[i].release(); } catch (Throwable t) { err("restore: release table " + i, t); }
+                tables[i] = null;
+            }
+        }
+        out("    restore: " + tablesCreated + " table(s) released at +" + (System.currentTimeMillis() - t0) + " ms");
+        tablesCreated = 0;
+        nextTable = 0;
         try { cameraEx.release(); } catch (Throwable t) { err("restore: camera release", t); }
         cameraEx = null;
         wbTouched = shiftTouched = matrixTouched = false;
@@ -686,6 +720,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private void onShutterAction() { if (state == LIVE) capture(); else out("capture ignored: not in live view"); }
 
     private void onMenuAction() {
+        if (capturing) { out("MENU ignored: capture still saving"); return; }
         if (state == LIVE) {
             out("leaving live view");
             restoreCamera();
