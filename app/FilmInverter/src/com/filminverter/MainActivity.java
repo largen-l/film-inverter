@@ -91,7 +91,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             "0,0,0,0,0,0,0,0,-1024", "0,0,0,0,0,0,0,0,-4096"};
     private int row = ROW_HI;
     private int inHi = 1023, inLo = 0; // table input range mapped to the full output range, step 8
-    private int gammaX100 = 100;       // 50..250: output = x^(1/gamma)
+    private static final int GAMMA_DEFAULT = 85;   // owner's pick in 0.8 (looked right with full-range levels)
+    private int gammaX100 = GAMMA_DEFAULT;         // 50..250: output = x^(1/gamma)
     private int temp = 5500;           // 2500..9900 step 100
     private int shiftAB = 0, shiftGM = 0;   // -32..32
     private int matrixIdx = 0;
@@ -142,7 +143,29 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             public void onStartTrackingTouch(SeekBar s) { out("touch: slider start"); }
             public void onStopTrackingTouch(SeekBar s) { out("touch: slider stop at " + s.getProgress()); }
         });
-        rowPanel.addView(slider, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f));
+        // keep the slider's ends away from the screen edge (hard to reach at the bezel), bigger thumb travel area
+        slider.setPadding(36, 12, 36, 12);
+        LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f);
+        sl.leftMargin = 24;
+        sl.rightMargin = 48;
+        rowPanel.addView(slider, sl);
+        // double-tap the slider = reset this row to its default (camera's own WB for the WB rows)
+        slider.setOnTouchListener(new View.OnTouchListener() {
+            private long lastUp;
+            public boolean onTouch(View v, MotionEvent e) {
+                if ((e.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP) {
+                    long t = System.currentTimeMillis();
+                    if (t - lastUp < 350) {
+                        out("touch: slider double-tap -> reset " + ROW_NAMES[row]);
+                        resetRow();
+                        lastUp = 0;
+                        return true;
+                    }
+                    lastUp = t;
+                }
+                return false;                                  // let the SeekBar handle the touch normally
+            }
+        });
         rowPanel.setVisibility(View.GONE);
         overlay.addView(rowPanel, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -163,15 +186,51 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         addButton(buttons, ">", new Runnable() { public void run() { onNextAction(); } });
         addButton(buttons, "Live view / Pos-Neg", new Runnable() { public void run() { onEnterAction(); } });
         addButton(buttons, "Capture", new Runnable() { public void run() { onShutterAction(); } });
+        addButton(buttons, "Flip", new Runnable() { public void run() { cycleFlip(); } });
         addButton(buttons, "Back / Exit", new Runnable() { public void run() { onMenuAction(); } });
         overlay.addView(buttons, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         root.addView(overlay);
         setContentView(root);
 
+        try { flipMode = getSharedPreferences("fi", MODE_PRIVATE).getInt("flip", 0); } catch (Throwable ignored) {}
+        applyWindowFlip();
         setStatus(BUSY, "WORKING... please wait");
-        out("=== Film Inverter probe 8, " + now() + " ===");
+        out("=== Film Inverter probe 9, " + now() + " ===  flip mode " + FLIP_NAMES[flipMode]);
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
+    }
+
+    // ------------------------------------------------------------------ display flip (owner's rig: screen upside down)
+    // Sony's avio.DisplayManager only reports DeviceStatus.viewPattern (no setter), so try the Android ways:
+    // rotate the window (buttons, text, touch) and/or rotate the camera preview. Which combination turns both the
+    // live view and the buttons upside down can only be seen on the camera, hence 4 modes.
+    private static final String[] FLIP_NAMES = {"1 normal", "2 buttons flipped", "3 buttons + live view flipped",
+            "4 live view flipped"};
+    private int flipMode;
+
+    private void applyWindowFlip() {
+        boolean flipWindow = flipMode == 1 || flipMode == 2;
+        try {
+            setRequestedOrientation(flipWindow ? 8 /* SCREEN_ORIENTATION_REVERSE_LANDSCAPE, API 9 */
+                    : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        } catch (Throwable t) { err("flip window", t); }
+    }
+
+    private void applyPreviewFlip() {
+        if (cameraEx == null) return;
+        try {
+            cameraEx.getNormalCamera().setDisplayOrientation(flipMode >= 2 ? 180 : 0);
+        } catch (Throwable t) { err("flip preview", t); }
+    }
+
+    private void cycleFlip() {
+        flipMode = (flipMode + 1) % FLIP_NAMES.length;
+        try { getSharedPreferences("fi", MODE_PRIVATE).edit().putInt("flip", flipMode).commit(); } catch (Throwable ignored) {}
+        applyWindowFlip();
+        applyPreviewFlip();
+        out("flip mode " + FLIP_NAMES[flipMode]);
+        final String msg = "Flip: " + FLIP_NAMES[flipMode];
+        ui.post(new Runnable() { public void run() { status.setText(msg); } });
     }
 
     private void addButton(LinearLayout row, final String label, final Runnable action) {
@@ -375,7 +434,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     // ------------------------------------------------------------------ live view
     private static final String[] SAVED_KEYS = {
         "whitebalance", "color-temperture-white-balance", "white-balance-shift-mode",
-        "white-balance-shift-lb", "white-balance-shift-cc", "rgb-matrix-mode", "rgb-matrix",
+        "white-balance-shift-lb", "white-balance-shift-cc", "rgb-matrix-mode", "rgb-matrix", "storage-fmt",
     };
 
     private void startLive() {
@@ -391,7 +450,15 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             out(s.toString());
             try { temp = Integer.parseInt(p.get("color-temperture-white-balance")); } catch (Throwable ignored) {}
             wbTouched = shiftTouched = matrixTouched = false;
+            // The positive only exists in the JPEG (the ARW is always the negative). Quality kept reverting to
+            // RAW only (probe 4, 0.8: captures were ARW-only), so make sure captures write RAW+JPEG while we are
+            // in live view; restored on exit with the other saved settings.
+            if ("raw".equals(savedParams.get("storage-fmt"))) {
+                setParamsWith(cam, "storage-fmt", "rawjpeg");
+                wbTouched = true;                                // forces the restore on exit
+            }
             cam.setPreviewDisplay(surface.getHolder());
+            applyPreviewFlip();
             cam.startPreview();
             positive = true;
             applyCurve();
@@ -459,7 +526,10 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     /** Write one or more camera parameters, then read them back. */
     private synchronized void setParams(String... kv) {
         if (cameraEx == null) return;
-        Camera cam = cameraEx.getNormalCamera();
+        setParamsWith(cameraEx.getNormalCamera(), kv);
+    }
+
+    private void setParamsWith(Camera cam, String... kv) {
         try {
             Camera.Parameters p = cam.getParameters();
             for (int i = 0; i + 1 < kv.length; i += 2) p.set(kv[i], kv[i + 1]);
@@ -556,6 +626,35 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     private static int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+    /** Double-tap on the slider: back to the default (levels) or to the camera's own setting (WB rows, matrix). */
+    private void resetRow() {
+        if (state != LIVE) return;
+        switch (row) {
+            case ROW_HI: inHi = 1023; requestCurve(); break;
+            case ROW_LO: inLo = 0; requestCurve(); break;
+            case ROW_GAMMA: gammaX100 = GAMMA_DEFAULT; requestCurve(); break;
+            case ROW_TEMP: {
+                String wb = savedParams.get("whitebalance"), ct = savedParams.get("color-temperture-white-balance");
+                try { temp = Integer.parseInt(ct); } catch (Throwable ignored) {}
+                if (wb != null && ct != null) setParams("whitebalance", wb, "color-temperture-white-balance", ct);
+                break;
+            }
+            case ROW_AB: case ROW_GM: {
+                if (row == ROW_AB) shiftAB = 0; else shiftGM = 0;
+                String mode = savedParams.get("white-balance-shift-mode");
+                boolean off = shiftAB == 0 && shiftGM == 0;
+                setParams("white-balance-shift-mode", off && mode != null ? mode : "true",
+                        "white-balance-shift-lb", String.valueOf(shiftAB), "white-balance-shift-cc", String.valueOf(shiftGM));
+                break;
+            }
+            default:
+                matrixIdx = 0;
+                setParams("rgb-matrix-mode", "false");
+                break;
+        }
+        refreshRow();
+    }
+
     private void refreshRow() {
         final String label = "[" + (row + 1) + "/" + ROW_NAMES.length + "] " + ROW_NAMES[row] + ": " + rowValueText(row);
         final int[] r = sliderRange();
@@ -591,6 +690,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try {
             final Camera cam = cameraEx.getNormalCamera();
             final boolean pos = positive;
+            final long startedAt = System.currentTimeMillis();
+            try { out("    storage-fmt at capture: " + cam.getParameters().get("storage-fmt")); } catch (Throwable ignored) {}
             out("    " + now() + "  CAPTURE with curve " + curveText());
             setStatus(LIVE, "Capturing... wait");
             cam.takePicture(null, null, null);
@@ -608,7 +709,10 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                         if (cameraEx == null) return;                 // left live view meanwhile
                         try { cam.startPreview(); } catch (Throwable t) { err("restart preview after capture", t); }
                         File jpg = newestDcimJpeg();
-                        out("    newest JPEG after capture: " + (jpg == null ? "none" : jpg.getAbsolutePath()));
+                        // only a JPEG written by this capture counts (0.8 listed an old negative's JPEG when the
+                        // capture was RAW-only); file times have 2 s resolution on FAT/exFAT
+                        if (jpg != null && jpg.lastModified() < startedAt - 2500) jpg = null;
+                        out("    JPEG from this capture: " + (jpg == null ? "none (RAW only?)" : jpg.getAbsolutePath()));
                         if (pos && jpg != null) rememberPositiveCapture(jpg.getName());
                         updateStatusLine();
                     } finally {

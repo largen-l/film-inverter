@@ -34,5 +34,22 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
   churn (or leaks) degrades; Sony's camera software then fails when it takes the pipeline back.
 - **0.8 mitigation:** at most 2 GammaTables per live-view session, reused (write the one not on screen,
   then switch); slider changes coalesced to ≤ 1 per 150 ms; exit order: curve off → 150 ms → stop preview →
-  release tables → release camera, each step timed in the log. To confirm: drag sliders a lot in 0.8, then
-  exit and check that the camera returns normally.
+  release tables → release camera, each step timed in the log.
+- **Confirmed in 0.8:** 426 curve updates with never more than 2 tables allocated, ordered exit in 534 ms,
+  camera returned to normal shooting cleanly. Second capture worked; MENU was ignored while saving.
+
+## 0.8 session: other findings
+
+- Owner's settings that looked right: levels full range (input 0..1023), **gamma 0.85** (now the default),
+  **colour temp 2700 K + WB amber-blue +2 (B+2)** to cancel the blue cast in live view.
+- Quality had reverted to **RAW only** again: all three captures were ARW-only, so the positive JPEG with those
+  settings was never written. 0.9 switches `storage-fmt` to `rawjpeg` while live view is open (restored on exit).
+- Bug: with no new JPEG, the newest *old* JPEG (`LTL00009`, a real negative) was recorded as a positive capture.
+  0.9 only accepts a JPEG written after the capture started; `CAPTURED.TXT` was cleaned by hand.
+
+## 0.9 additions (owner requests)
+
+- Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and
+  matrix back to the camera's own settings).
+- **Flip** button cycling 4 modes (window flipped via reverse-landscape and/or preview `setDisplayOrientation(180)`),
+  remembered between runs. Sony's `avio.DisplayManager` only reports `DeviceStatus.viewPattern` (no setter).
