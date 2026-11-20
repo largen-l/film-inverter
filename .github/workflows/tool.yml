@@ -66,6 +66,8 @@ jobs:
 
   distros:
     needs: package
+    # runs even if a macOS package job was dropped (GitHub's macOS arm64 runners are often out of capacity)
+    if: ${{ always() }}
     strategy:
       fail-fast: false
       matrix:
@@ -100,7 +102,9 @@ jobs:
         with: { name: FilmInverter-apk, path: build/FilmInverter/FilmInverter.apk }
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # publishes whatever was built as long as the APK and the Linux checks passed; a missing macOS build can be
+    # added later with `gh release upload`
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') && needs.apk.result == 'success' && needs.distros.result == 'success' }}
     needs: [package, apk, distros]
     runs-on: ubuntu-22.04
     permissions:
