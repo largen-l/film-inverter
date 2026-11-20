@@ -76,16 +76,18 @@ by CI). Or from source: `pip install -r tool/requirements.txt`, then `python too
 
 | | Windows 10/11 x64 | macOS (Apple Silicon) | macOS (Intel) | Debian/Ubuntu | Fedora | Arch |
 |---|---|---|---|---|---|---|
-| Engine tests, develop (JPEG + RAW) | ✅ on the owner's PC | ⏳ CI | ⏳ CI (optional) | ⏳ CI | ⏳ CI | ⏳ CI |
-| Executable runs (smoke test) | ✅ | ⏳ CI | ⏳ CI (optional) | ⏳ CI | ⏳ CI (container) | ⏳ CI (container) |
-| GUI opens | ✅ (screenshots checked) | ⏳ CI | – | ⏳ CI (virtual display) | ❓ | ❓ |
-| Toolchain setup + app build | ✅ | ❓ | ❓ | ⏳ CI | ❓ | ❓ |
+| Engine tests, develop (JPEG + RAW) | ✅ owner's PC + CI | ✅ CI | – | ✅ CI (Ubuntu 22.04) | – | – |
+| Executable runs (smoke test: CLI, themes, develop a synthetic negative) | ✅ owner's PC + CI | ✅ CI | ✅ CI (macOS 15) | ✅ CI (Ubuntu 22.04/24.04, Debian 12 containers) | ✅ CI (Fedora 41 container) | ✅ CI (Arch container) |
+| GUI opens | ✅ (screenshots checked) + CI | ✅ CI | ❓ | ✅ CI (virtual display) | ❓ | ❓ |
+| Toolchain setup + app build | ✅ | ❓ | ❓ | ✅ CI (Ubuntu 22.04) | ❓ | ❓ |
 | Install on the camera | ✅ (pmca-console, Proxmox VM USB passthrough) | ❓ | ❓ | ❓ | ❓ | ❓ |
 | Card detection / logs | ✅ code path, ❓ with the new tool | ❓ | ❓ | ❓ | ❓ | ❓ |
 
-✅ tested · ⏳ covered by the GitHub Actions workflow (`.github/workflows/tool.yml`), results below once it
-has run · ❓ needs testing on real hardware (camera USB on macOS/Linux is the biggest unknown: Sony-PMCA-RE
-runs from source with libusb on Linux, and its macOS binary is Intel-only, so Apple Silicon uses Rosetta).
+✅ tested (CI = the GitHub Actions workflow `.github/workflows/tool.yml`, all green on 2026-11-20) ·
+❓ needs testing on real hardware · – not separately tested (same code as the column next to it).
+Camera USB on macOS/Linux is the biggest unknown: Sony-PMCA-RE runs from source with libusb on Linux, and
+its macOS binary is Intel-only, so Apple Silicon uses Rosetta. GUI on Fedora/Arch is the same Tk code as
+Ubuntu but needs the distro's Tk package (`filminverter doctor` names it).
 
 Desktop engine directly (from source): `python engine/invert_roll.py scans/roll01 --crop` and
 `python -m pytest engine/tests`.
