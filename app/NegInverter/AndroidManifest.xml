@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PMCA manifest. Compared with ma1co/PMCADemo (MIT): it has no uses-library entries; the Sony-specific
+  part is the DAConnectionManagerService receivers (ExitCompleted kills the process on app exit).
+  The AppInfoReceive broadcast is sent from SonyActivity.onResume.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.autofilmscan"
+    android:versionCode="1"
+    android:versionName="0.1-probe">
+
+    <uses-sdk android:minSdkVersion="10" android:targetSdkVersion="10" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <application
+        android:label="Neg Inverter"
+        android:icon="@android:drawable/sym_def_app_icon">
+        <receiver android:name=".ExitCompletedReceiver">
+            <intent-filter>
+                <action android:name="com.android.server.DAConnectionManagerService.ExitCompleted" />
+                <category android:name="ANDROID.INTENT.CATEGORY.DEFAULT" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".MainActivity"
+            android:label="Neg Inverter"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

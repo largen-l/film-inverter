@@ -1,0 +1,25 @@
+# toolchain, downloads, decompiled third-party code (never commit Sony's code)
+toolchain/
+# test scans and outputs (large, personal)
+scans/*
+!scans/README.md
+# build outputs
+build/
+*.apk
+*.dex
+*.keystore
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Claude Code local state
+.claude/*.lock
+.claude/settings.local.json
+# editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+# logs from FIRST-RUN.cmd
+logs/
