@@ -53,7 +53,16 @@ Done:
 - UI: the owner is choosing between 8 concept mockups (refined minimal, camera-native menus, Material, glass,
   enlarger head, light table, scope HUD, safelight) on a private design canvas. All must stay plain Android 4.1
   views over the hardware live view: no live blur, no per-frame redraw, histograms from captures only.
-- **Next:** automatic orange-mask removal (measure the base, set WB/matrix), then the chosen UI.
+- **0.12 (first app build, 2026-11-20)**: owner picked UI concept #1 (refined minimal). New MainActivity +
+  `Theme.java` (8 built-in palettes + `FILMINV/THEMES/*.JSN`), `Slider.java`, `OverlayViews.java`;
+  `tools/theme-maker.html` makes theme files. Features: base calibration (closed loop over small JPEG
+  measurement shots: colour temp + G–M shift until the base is neutral, then Black = base), auto levels,
+  alignment check (`analyse_frame`/`analyseFrame` now measure film-edge tilt; Py == Java), guides, capture
+  delay, silent shutter, roll profile `FILMINV/ROLL.TXT`, develop newest frame with auto-crop. **None of it
+  run on the camera yet**; the calibration loop's convergence is the main unknown.
+- Ideas from other tools (NLP roll analysis, darktable negadoctor Dmin from border, NegPy auto-crop, FilmLab
+  delayed shutter, Nikon D850 negative mode) are reflected above; still open: roll-level analysis across frames,
+  B&W mode, XMP crop sidecars for Lightroom, full theme layouts (only palettes so far).
 - **Linux**: `tools/*.sh` twins of the PowerShell scripts (toolchain-linux/, .venv-linux/, PMCA-RE run
   from source). **Not yet run on Linux.** WSL2 can't start on this PC (Proxmox VM without nested
   virtualisation); the owner can provide SSH to a Linux VM/LXC for testing.

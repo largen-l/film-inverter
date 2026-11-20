@@ -85,10 +85,89 @@ public final class NegEngine {
         public int x0, y0, x1, y1;
         public boolean borderFound;
         public double[] base;
+        /** Film edge angle in degrees, + = image rotated clockwise; NaN when no border edge was measured. */
+        public double tiltDeg = Double.NaN;
         public String toString() {
             return "[" + x0 + "," + y0 + "," + x1 + "," + y1 + "] border=" + borderFound
-                    + " base=" + (base == null ? "null" : arr(base));
+                    + " base=" + (base == null ? "null" : arr(base))
+                    + " tilt=" + (Double.isNaN(tiltDeg) ? "none" : String.format("%.2f", tiltDeg));
         }
+    }
+
+    // ------------------------------------------------------------------ tilt (same as _edge_tilt in negengine.py)
+    static final int TILT_MIN_POINTS = 20, TILT_RUN = 3;
+    static final double TILT_REJECT = 3.0;
+
+    /** Least-squares slope of v over t, refit once without samples > TILT_REJECT from the first fit. */
+    static double fitSlope(double[] t, double[] v, int n) {
+        double b = Double.NaN;
+        boolean[] keep = new boolean[n];
+        java.util.Arrays.fill(keep, true);
+        for (int pass = 0; pass < 2; pass++) {
+            int m = 0; double tm = 0, vm = 0;
+            for (int i = 0; i < n; i++) if (keep[i]) { tm += t[i]; vm += v[i]; m++; }
+            if (m < TILT_MIN_POINTS) return Double.NaN;
+            tm /= m; vm /= m;
+            double num = 0, den = 0;
+            for (int i = 0; i < n; i++) if (keep[i]) { num += (t[i] - tm) * (v[i] - vm); den += (t[i] - tm) * (t[i] - tm); }
+            if (den == 0) return Double.NaN;
+            b = num / den;
+            double a = vm - b * tm;
+            for (int i = 0; i < n; i++) if (keep[i] && Math.abs(v[i] - (a + b * t[i])) > TILT_REJECT) keep[i] = false;
+        }
+        return b;
+    }
+
+    /** First index where TILT_RUN consecutive non-border pixels start, or -1. */
+    private static int firstRun(boolean[] seq, int len) {
+        int run = 0;
+        for (int k = 0; k < len; k++) {
+            run = seq[k] ? 0 : run + 1;
+            if (run == TILT_RUN) return k - TILT_RUN + 1;
+        }
+        return -1;
+    }
+
+    static double edgeTilt(boolean[] bp, int w, int h, int y0, int y1, int x0, int x1) {
+        int gapY = Math.max(2, (int) (h * FRAME_GAP)), gapX = Math.max(2, (int) (w * FRAME_GAP));
+        double sum = 0; int count = 0;
+        boolean[] seq = new boolean[Math.max(w, h)];
+        double[] ts = new double[Math.max(w, h)], vs = new double[Math.max(w, h)];
+        for (int side = 0; side < 4; side++) {
+            boolean horiz = side < 2, first = side % 2 == 0;
+            if (side == 0 && y0 <= 0) continue;
+            if (side == 1 && y1 >= h) continue;
+            if (side == 2 && x0 <= 0) continue;
+            if (side == 3 && x1 >= w) continue;
+            int n = 0;
+            int lo = horiz ? x0 + (x1 - x0) / 20 : y0 + (y1 - y0) / 20;
+            int hi = horiz ? x1 - (x1 - x0) / 20 : y1 - (y1 - y0) / 20;
+            int gap = horiz ? gapY : gapX, size = horiz ? h : w, edge0 = horiz ? y0 : x0, edge1 = horiz ? y1 : x1;
+            for (int line = lo; line < hi; line++) {
+                int start, len, k;
+                if (first) {
+                    start = Math.max(0, edge0 - 2 * gap);
+                    int end = Math.min(size, edge0 + 3 * gap);
+                    len = end - start;
+                    for (int i = 0; i < len; i++) seq[i] = horiz ? bp[(start + i) * w + line] : bp[line * w + start + i];
+                    k = firstRun(seq, len);
+                    if (k >= 0) { ts[n] = line; vs[n] = start + k; n++; }
+                } else {
+                    start = Math.min(size, edge1 + 2 * gap);
+                    int from = Math.max(0, edge1 - 3 * gap);
+                    len = start - from;
+                    for (int i = 0; i < len; i++) {                // reversed: from start-1 down to from
+                        int p = start - 1 - i;
+                        seq[i] = horiz ? bp[p * w + line] : bp[line * w + p];
+                    }
+                    k = firstRun(seq, len);
+                    if (k >= 0) { ts[n] = line; vs[n] = start - 1 - k; n++; }
+                }
+            }
+            double b = fitSlope(ts, vs, n);
+            if (!Double.isNaN(b)) { sum += horiz ? Math.toDegrees(Math.atan(b)) : -Math.toDegrees(Math.atan(b)); count++; }
+        }
+        return count > 0 ? sum / count : Double.NaN;
     }
 
     static double lum(int c) {
@@ -236,6 +315,12 @@ public final class NegEngine {
         f.y1 = y1 < h ? y1 - iy : h;
         if (f.x1 - f.x0 < w / 4 || f.y1 - f.y0 < h / 4) {          // implausible: use the whole frame
             f.x0 = 0; f.y0 = 0; f.x1 = w; f.y1 = h; f.borderFound = false;
+            return f;
+        }
+        if (f.borderFound) {
+            boolean[] bp = new boolean[w * h];
+            for (int i = 0; i < w * h; i++) bp[i] = lum(px[i]) >= brightThr || maxLin(px[i]) < FRAME_DARK;
+            f.tiltDeg = edgeTilt(bp, w, h, y0, y1, x0, x1);
         }
         return f;
     }

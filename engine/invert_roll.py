@@ -60,6 +60,7 @@ def main(argv=None) -> int:
     ap.add_argument("--temp", type=float)
     ap.add_argument("--tint", type=float)
     ap.add_argument("--max-side", type=int, default=0, help="downscale longest side (0 = full)")
+    ap.add_argument("--crop", action="store_true", help="auto-crop each positive to its picture area (no film border)")
     args = ap.parse_args(argv)
 
     sources = pick_sources(args.folder, args.prefer)
@@ -111,8 +112,12 @@ def main(argv=None) -> int:
     for p, img in frames.items():
         t = time.time()
         pos = ne.invert(img, prof)
+        info = ne.analyse_frame(img)
+        if args.crop:
+            pos = ne.crop_to_picture(pos, info)
         ne.save_srgb(pos, out_dir / f"{p.stem}_POS.JPG")
-        print(f"  {p.name} -> {p.stem}_POS.JPG  ({time.time() - t:.2f}s)")
+        tilt = "" if info.tilt_deg is None else f", film edge tilt {info.tilt_deg:+.2f} deg"
+        print(f"  {p.name} -> {p.stem}_POS.JPG  ({time.time() - t:.2f}s{tilt})")
     print(f"done -> {out_dir}")
     return 0
 

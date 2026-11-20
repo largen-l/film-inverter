@@ -27,6 +27,23 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 | `docs/` | Plan, checkpoints, API findings |
 | `toolchain/`, `scans/`, `build/` | Local only (git-ignored) |
 
+## On the camera (0.12)
+
+The app opens straight into **inverted live view**: the camera's own image processor applies an inverted
+tone curve, so live view and captured JPEGs are positives (the RAW stays the untouched negative).
+
+- **Chips / up-down**: Black, White, Gamma, Temp, A–B, G–M. **Slider / left-right / dials**: adjust. Double-tap
+  the slider to reset. **Centre**: positive ↔ negative. **Shutter / round button**: capture.
+- **Menu**: *Calibrate film base* (makes the clear film base neutral with the camera's white balance: the
+  orange mask stops turning blue), *Auto levels* (black/white points from the frame, film border excluded),
+  *Check alignment* (measures the film edge angle and says which way to rotate), alignment guides,
+  2 s capture delay, silent shutter, themes, display flip, *Develop newest frame* (in-camera positive of the
+  newest RAW+JPEG negative, auto-cropped), log, reset roll, exit.
+- Calibration and levels are kept per roll in `FILMINV/ROLL.TXT`.
+- **Themes**: 8 built in; add your own with [`tools/theme-maker.html`](tools/theme-maker.html) (open it in a
+  browser) and copy the `.JSN` file to `FILMINV/THEMES/` on the card.
+- Every camera setting the app changes is restored when it exits.
+
 ## Quick start (Windows)
 
 ```powershell

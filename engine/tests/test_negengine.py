@@ -4,6 +4,7 @@ film model (orange mask + different layer contrasts), run the engine, and check
 that (a) grey stays grey, (b) tones stay in order, (c) the roll profile
 round-trips. Run:  python -m pytest engine/tests   (or just python test_negengine.py)
 """
+import math
 import sys
 from pathlib import Path
 
@@ -121,6 +122,33 @@ def test_auto_levels_ignore_film_border():
     pos = ne.invert(strip, ne.RollProfile(base=ne.auto_base(strip).tolist()))
     grey = pos[5:35, 5 * 40 + 5: 6 * 40 - 5].reshape(-1, 3).mean(0)
     assert grey.max() - grey.min() < 0.04, grey
+
+
+def tilted_strip(slope: float):
+    """Chart picture whose bottom edge (picture -> rebate) slopes by `slope` px per px: a slightly rotated film."""
+    scene = np.concatenate([colour_chart(), grey_ramp(40, 240), grey_ramp(40, 240)], 0)   # 120 x 240
+    neg = make_negative(scene)
+    base_px = make_negative(np.full((1, 1, 3), 1e-4, np.float32))[0, 0]
+    h, w, _ = neg.shape
+    out = np.empty((h + 30, w, 3), np.float32)
+    for x in range(w):
+        edge = int(round(100 + slope * x))                 # picture rows [0, edge), rebate below
+        out[:edge, x] = neg[:edge, x]
+        out[edge:, x] = base_px
+    return out
+
+
+def test_tilt_measured_from_film_edge():
+    slope = 0.026                                           # ~1.5 degrees, clockwise (right side lower)
+    info = ne.analyse_frame(tilted_strip(slope))
+    assert info.tilt_deg is not None, info
+    assert abs(info.tilt_deg - math.degrees(math.atan(slope))) < 0.3, info.tilt_deg
+
+
+def test_no_tilt_on_straight_strip():
+    strip, _ = film_strip(scene_chart_and_ramp())
+    info = ne.analyse_frame(strip)
+    assert info.tilt_deg is not None and abs(info.tilt_deg) < 0.3, info.tilt_deg
 
 
 def test_profile_roundtrip(tmp_path=None):

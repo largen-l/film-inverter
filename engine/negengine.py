@@ -129,6 +129,7 @@ class FrameInfo:
     rect: Tuple[int, int, int, int]       # picture area x0, y0, x1, y1 in pixels (x1/y1 exclusive)
     border_found: bool                    # False -> rect is the whole frame
     base: Optional[np.ndarray]            # film base from the rebate (linear RGB), None if not found
+    tilt_deg: Optional[float] = None      # film edge angle; + = image rotated clockwise. None if no edge
 
 
 def _border_lines(lum: np.ndarray, bright: np.ndarray, dark: np.ndarray) -> Tuple[int, int]:
@@ -187,7 +188,97 @@ def analyse_frame(lin: np.ndarray) -> FrameInfo:
         return info
     x0, y0, x1, y1 = info.rect
     return FrameInfo(rect=(x0 * s, y0 * s, min(full_w, x1 * s), min(full_h, y1 * s)),
-                     border_found=info.border_found, base=info.base)
+                     border_found=info.border_found, base=info.base, tilt_deg=info.tilt_deg)
+
+
+TILT_MIN_POINTS = 20      # need this many edge samples along a border to trust its angle
+TILT_RUN = 3              # the picture starts where this many pixels in a row are not border-like
+TILT_REJECT = 3.0         # drop samples further than this (px, small image) from the first line fit
+
+
+def _fit_slope(t: Sequence[float], v: Sequence[float]) -> Optional[float]:
+    """Least-squares slope of v over t, refit once without samples > TILT_REJECT from the first fit."""
+    t = np.asarray(t, np.float64)
+    v = np.asarray(v, np.float64)
+    for _ in range(2):
+        if t.size < TILT_MIN_POINTS:
+            return None
+        tm, vm = t.mean(), v.mean()
+        den = float(((t - tm) ** 2).sum())
+        if den == 0:
+            return None
+        b = float(((t - tm) * (v - vm)).sum() / den)
+        a = vm - b * tm
+        keep = np.abs(v - (a + b * t)) <= TILT_REJECT
+        t, v = t[keep], v[keep]
+    return b
+
+
+def _edge_tilt(border_px: np.ndarray, y0: int, y1: int, x0: int, x1: int) -> Optional[float]:
+    """
+    Angle of the film border edges (degrees, + = clockwise). For every border side found, walk each line
+    across the picture and note where the picture starts (TILT_RUN non-border pixels in a row), fit a
+    straight line, convert its slope to an angle; average the sides. Same algorithm in NegEngine.java.
+    """
+    h, w = border_px.shape
+    gap = max(2, int(h * FRAME_GAP)), max(2, int(w * FRAME_GAP))
+    angles = []
+
+    def first_run(seq) -> Optional[int]:
+        run = 0
+        for k, b in enumerate(seq):
+            run = 0 if b else run + 1
+            if run == TILT_RUN:
+                return k - TILT_RUN + 1
+        return None
+
+    def horizontal(top: bool):
+        ts, vs = [], []
+        lo, hi = x0 + (x1 - x0) // 20, x1 - (x1 - x0) // 20
+        for x in range(lo, hi):
+            if top:
+                start = max(0, y0 - 2 * gap[0])
+                k = first_run(border_px[start: min(h, y0 + 3 * gap[0]), x])
+                if k is not None:
+                    ts.append(x); vs.append(start + k)
+            else:
+                start = min(h, y1 + 2 * gap[0])
+                seg = border_px[max(0, y1 - 3 * gap[0]): start, x][::-1]
+                k = first_run(seg)
+                if k is not None:
+                    ts.append(x); vs.append(start - 1 - k)
+        b = _fit_slope(ts, vs)
+        if b is not None:
+            angles.append(math.degrees(math.atan(b)))
+
+    def vertical(left: bool):
+        ts, vs = [], []
+        lo, hi = y0 + (y1 - y0) // 20, y1 - (y1 - y0) // 20
+        for y in range(lo, hi):
+            if left:
+                start = max(0, x0 - 2 * gap[1])
+                k = first_run(border_px[y, start: min(w, x0 + 3 * gap[1])])
+                if k is not None:
+                    ts.append(y); vs.append(start + k)
+            else:
+                start = min(w, x1 + 2 * gap[1])
+                seg = border_px[y, max(0, x1 - 3 * gap[1]): start][::-1]
+                k = first_run(seg)
+                if k is not None:
+                    ts.append(y); vs.append(start - 1 - k)
+        b = _fit_slope(ts, vs)
+        if b is not None:
+            angles.append(-math.degrees(math.atan(b)))
+
+    if y0 > 0:
+        horizontal(True)
+    if y1 < h:
+        horizontal(False)
+    if x0 > 0:
+        vertical(True)
+    if x1 < w:
+        vertical(False)
+    return float(np.mean(angles)) if angles else None
 
 
 def _analyse_small(lin: np.ndarray) -> FrameInfo:
@@ -224,8 +315,14 @@ def _analyse_small(lin: np.ndarray) -> FrameInfo:
     rect = (x0 + ix if x0 > 0 else 0, y0 + iy if y0 > 0 else 0,
             x1 - ix if x1 < w else w, y1 - iy if y1 < h else h)
     if rect[2] - rect[0] < w // 4 or rect[3] - rect[1] < h // 4:      # implausible: use the whole frame
-        rect, found = (0, 0, w, h), False
-    return FrameInfo(rect=rect, border_found=found, base=base)
+        return FrameInfo(rect=(0, 0, w, h), border_found=False, base=base)
+    tilt = _edge_tilt(bright | dark, y0, y1, x0, x1) if found else None
+    return FrameInfo(rect=rect, border_found=found, base=base, tilt_deg=tilt)
+
+
+def crop_to_picture(img: np.ndarray, info: FrameInfo) -> np.ndarray:
+    """Auto-crop: the picture area without film border (same rect the levels are measured on)."""
+    return picture_area(img, info)
 
 
 def picture_area(img: np.ndarray, info: FrameInfo) -> np.ndarray:
