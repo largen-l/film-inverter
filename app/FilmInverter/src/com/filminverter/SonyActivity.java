@@ -51,6 +51,16 @@ public abstract class SonyActivity extends Activity {
         }
     }
 
+    /** PMCADemo uses LOW colour depth while camera live view is on screen, HIGH otherwise. */
+    protected void setDisplayColorDepth(boolean high) {
+        if (displayManager == null) return;
+        try {
+            displayManager.setColorDepth(high ? DisplayManager.ColorDepth.HIGH : DisplayManager.ColorDepth.LOW);
+        } catch (Throwable t) {
+            logWarning("setColorDepth", t);
+        }
+    }
+
     protected void notifyAppInfo() {
         Intent intent = new Intent("com.android.server.DAConnectionManagerService.AppInfoReceive");
         intent.putExtra("package_name", getComponentName().getPackageName());
