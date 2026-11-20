@@ -3,7 +3,7 @@
   Build a PMCA (Android 2.3) APK without Gradle: aapt -> javac -> d8 -> zipalign -> apksigner (v1).
 
 .EXAMPLE
-  tools\build.ps1                      # builds app\NegToPos
+  tools\build.ps1                      # builds app\FilmInverter
   tools\build.ps1 -App PMCADemo        # builds toolchain\src\PMCADemo (toolchain sanity check)
   tools\build.ps1 -AppDir C:\some\app  # any app folder (AndroidManifest.xml + src/ or src/main/java)
 
@@ -12,7 +12,7 @@ Sony-PMCA-RE's docs say the camera accepts debug and release certificates; if an
 install is ever refused, try the -unsigned.apk.
 #>
 param(
-    [string]$App = 'NegToPos',
+    [string]$App = 'FilmInverter',
     [string]$AppDir
 )
 $ErrorActionPreference = 'Stop'
@@ -29,8 +29,8 @@ function Run {
     if ($LASTEXITCODE -ne 0) { throw "$exe failed ($LASTEXITCODE): $($rest -join ' ')" }
 }
 
-$BT = $env:NTP_BUILD_TOOLS
-$AJ = $env:NTP_ANDROID_JAR
+$BT = $env:FI_BUILD_TOOLS
+$AJ = $env:FI_ANDROID_JAR
 $aapt = Join-Path $BT 'aapt.exe'
 # d8.bat / apksigner.bat silently do nothing without the legacy SDK 'tools\lib\find_java.bat' (and
 # pass -Djava.ext.dirs, which JDK 9+ rejects), so run their jars with our JDK directly.
@@ -137,10 +137,10 @@ Run $zipalign -f 4 $unsigned $aligned
 Write-Host "[6/6] sign (v1 / JAR signing, required for Android 2.3)"
 $ks = Join-Path $TC 'debug.keystore'
 if (-not (Test-Path $ks)) {
-    Run $keytool -genkeypair -keystore $ks -storepass android -keypass android -alias ntp `
-        -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=negative-to-positive debug'
+    Run $keytool -genkeypair -keystore $ks -storepass android -keypass android -alias fi `
+        -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=film-inverter debug'
 }
-Run $java -jar $apksignerJar sign --ks $ks --ks-pass pass:android --ks-key-alias ntp `
+Run $java -jar $apksignerJar sign --ks $ks --ks-pass pass:android --ks-key-alias fi `
     --v1-signing-enabled true --v2-signing-enabled false --v3-signing-enabled false `
     --min-sdk-version 10 --out "$out\$name.apk" $aligned
 Remove-Item $aligned

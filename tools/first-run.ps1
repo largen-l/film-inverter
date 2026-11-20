@@ -14,8 +14,8 @@ try {
     & (Join-Path $PSScriptRoot 'setup.ps1')
     Write-Host "`n#### STEP 2: build PMCADemo (toolchain check)"
     try { & (Join-Path $PSScriptRoot 'build.ps1') -App PMCADemo }
-    catch { Write-Host "PMCADemo build FAILED: $_"; $status = 'PMCADemo build failed (NegToPos still attempted)' }
-    Write-Host "`n#### STEP 3: build NegToPos"
+    catch { Write-Host "PMCADemo build FAILED: $_"; $status = 'PMCADemo build failed (FilmInverter still attempted)' }
+    Write-Host "`n#### STEP 3: build FilmInverter"
     & (Join-Path $PSScriptRoot 'build.ps1')
 } catch {
     $status = "FAILED: $_"

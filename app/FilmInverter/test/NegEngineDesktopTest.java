@@ -1,4 +1,4 @@
-import com.negtopos.engine.NegEngine;
+import com.filminverter.engine.NegEngine;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * Desktop check that the Java LUT engine matches engine/negengine.py.
  *
- *   javac -d build src/com/negtopos/engine/NegEngine.java test/NegEngineDesktopTest.java
+ *   javac -d build src/com/filminverter/engine/NegEngine.java test/NegEngineDesktopTest.java
  *   java -cp build NegEngineDesktopTest <roll folder> <base x0> <base y0> <base x1> <base y1> [python positives folder]
  *
  * Writes <roll>/positives_java/*_POS.png and, if a Python output folder is given,

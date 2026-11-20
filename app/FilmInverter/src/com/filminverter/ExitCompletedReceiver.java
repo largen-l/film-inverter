@@ -1,4 +1,4 @@
-package com.negtopos;
+package com.filminverter;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;

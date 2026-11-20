@@ -1,4 +1,4 @@
-package com.negtopos.engine;
+package com.filminverter.engine;
 
 /**
  * Colour-negative inversion for 8-bit (camera JPEG) input.

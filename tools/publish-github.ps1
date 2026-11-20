@@ -13,7 +13,7 @@
   powershell -ExecutionPolicy Bypass -File tools\publish-github.ps1 -Name a6500-negative-inverter -Private
 #>
 param(
-    [string]$Name = 'negative-to-positive',
+    [string]$Name = 'film-inverter',
     [switch]$Private
 )
 $ErrorActionPreference = 'Stop'
