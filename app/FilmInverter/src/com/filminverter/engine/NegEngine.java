@@ -1,7 +1,7 @@
 package com.filminverter.engine;
 
 /**
- * Colour-negative inversion for 8-bit (camera JPEG) input.
+ * Color-negative inversion for 8-bit (camera JPEG) input.
  *
  * Port of engine/negengine.py. For 8-bit sources every step of the Python pipeline
  * (sRGB decode, divide by base, -log10, levels, print curve, sRGB-ish output) is a
@@ -34,7 +34,7 @@ public final class NegEngine {
         public double baseExclude = 0.04;   // ignore pixels this close to the base when leveling
     }
 
-    // ------------------------------------------------------------------ colour
+    // ------------------------------------------------------------------ color
     static double srgbToLinear(double x) {
         x = Math.max(0, Math.min(1, x));
         return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
@@ -73,11 +73,11 @@ public final class NegEngine {
     }
 
     // ------------------------------------------------------------------ frame analysis
-    // Same algorithm and constants as analyse_frame() in negengine.py; keep them in sync.
+    // Same algorithm and constants as analyze_frame() in negengine.py; keep them in sync.
     static final double FRAME_LINE_FRAC = 0.6, FRAME_MAX_BORDER = 0.25, FRAME_INSET = 0.015;
     static final double FRAME_BRIGHT_REL = 0.9, FRAME_DARK = 0.004, CLIP = 0.985, HOLE_RATIO = 1.25;
     static final double FRAME_LINE_REL = 0.85, FRAME_GAP = 0.03;
-    static final int FRAME_MAX_SIDE = 600;   // analyse a subsampled copy (probe 0.5 took 11 s at 1500 px)
+    static final int FRAME_MAX_SIDE = 600;   // analyze a subsampled copy (probe 0.5 took 11 s at 1500 px)
     private static final int LUM_BINS = 4096;
 
     /** Picture area (x1/y1 exclusive) and the film base found in the border around it (null if none). */
@@ -249,23 +249,23 @@ public final class NegEngine {
 
     /**
      * Find the picture area of a scanned negative and the film base from the film border around it.
-     * Levels must come from the picture area only (see analyse_frame() in negengine.py for the why).
+     * Levels must come from the picture area only (see analyze_frame() in negengine.py for the why).
      */
-    public static Frame analyseFrame(int[] px, int w, int h) {
+    public static Frame analyzeFrame(int[] px, int w, int h) {
         int s = Math.max(1, (int) Math.ceil(Math.max(w, h) / (double) FRAME_MAX_SIDE));
-        if (s == 1) return analyseSmall(px, w, h);
+        if (s == 1) return analyzeSmall(px, w, h);
         int sw = (w + s - 1) / s, sh = (h + s - 1) / s;          // same pixels as numpy lin[::s, ::s]
         int[] small = new int[sw * sh];
         for (int y = 0; y < sh; y++)
             for (int x = 0; x < sw; x++) small[y * sw + x] = px[(y * s) * w + x * s];
-        Frame f = analyseSmall(small, sw, sh);
+        Frame f = analyzeSmall(small, sw, sh);
         f.x0 *= s; f.y0 *= s;
         f.x1 = Math.min(w, f.x1 * s); f.y1 = Math.min(h, f.y1 * s);
         return f;
     }
 
-    private static Frame analyseSmall(int[] px, int w, int h) {
-        // reference brightness: 99th percentile luminance of the frame centre (always picture)
+    private static Frame analyzeSmall(int[] px, int w, int h) {
+        // reference brightness: 99th percentile luminance of the frame center (always picture)
         int[] hist = new int[LUM_BINS];
         long n = 0;
         for (int y = h / 4; y < h - h / 4; y++)
@@ -353,7 +353,7 @@ public final class NegEngine {
             }
         }
 
-        /** Add the picture area of a frame (see {@link #analyseFrame}), every `step`-th pixel in x and y. */
+        /** Add the picture area of a frame (see {@link #analyzeFrame}), every `step`-th pixel in x and y. */
         public void addArea(int[] px, int width, Frame f, int step) {
             if (step < 1) step = 1;
             for (int y = f.y0; y < f.y1; y += step) add(px, y * width + f.x0, f.x1 - f.x0, step);

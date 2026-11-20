@@ -11,12 +11,12 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * UI colour theme. The layout is the "refined minimal" concept (#1); a theme only changes colours, corner
+ * UI color theme. The layout is the "refined minimal" concept (#1); a theme only changes colors, corner
  * radius and text size, so switching is instant and costs nothing per frame.
  *
  * Themes come from the built-in list below plus every *.JSN file in /FILMINV/THEMES/ on the card (8.3 file
  * names only: the camera refuses longer ones). tools/theme-maker.html builds those files. JSON keys
- * (all optional except name; colours as "#RRGGBB" or "#AARRGGBB"):
+ * (all optional except name; colors as "#RRGGBB" or "#AARRGGBB"):
  *   name, accent, onAccent, text, textDim, bar, pill, pillText, chipBorder, radius (dp-ish px), textScale
  */
 public final class Theme {

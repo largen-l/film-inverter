@@ -41,7 +41,7 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
 ## 0.8 session: other findings
 
 - Owner's settings that looked right: levels full range (input 0..1023), **gamma 0.85** (now the default),
-  **colour temp 2700 K + WB amber-blue +2 (B+2)** to cancel the blue cast in live view.
+  **color temp 2700 K + WB amber-blue +2 (B+2)** to cancel the blue cast in live view.
 - Quality had reverted to **RAW only** again: all three captures were ARW-only, so the positive JPEG with those
   settings was never written. 0.9 switches `storage-fmt` to `rawjpeg` while live view is open (restored on exit).
 - Bug: with no new JPEG, the newest *old* JPEG (`LTL00009`, a real negative) was recorded as a positive capture.

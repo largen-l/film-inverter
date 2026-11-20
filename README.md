@@ -1,9 +1,10 @@
 # Film Inverter
 
-In-camera **colour negative inversion** for the **Sony a6500**, built as a PlayMemories Camera App (PMCA),
+In-camera **color negative inversion** for the **Sony a6500**, built as a PlayMemories Camera App (PMCA),
 installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a desktop reference engine.
 
-> Status: **early / M0 (feasibility probes)**. Not ready for everyday use.
+> Status: **early (0.12)**: inverted live view and in-camera positives work; calibration features are new
+> and still being tested on the camera. Not ready for everyday use.
 > Unofficial, not affiliated with Sony. Installing custom apps is at your own risk.
 
 ## Goals
@@ -21,11 +22,11 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 | Path | What |
 |---|---|
 | `engine/` | Python reference engine (`negengine.py`) + batch CLI (`invert_roll.py`) + tests |
-| `app/FilmInverter/` | The camera app (Java, Android 2.3 / API 10). Currently the M0 probe build |
+| `app/FilmInverter/` | The camera app (Java, Android API 10; the a6500 runs Android 4.1) |
 | `app/FilmInverter/src/.../engine/NegEngine.java` | LUT-based port of the engine for 8-bit camera JPEGs |
-| `tools/` | Windows scripts: `setup.ps1`, `build.ps1`, `install.ps1`, `decompile.ps1`, `publish-github.ps1` |
+| `tool/` | **Desktop tool** (Windows, macOS, Linux): CLI + GUI for setup, build, install, develop, themes |
 | `docs/` | Plan, checkpoints, API findings |
-| `toolchain/`, `scans/`, `build/` | Local only (git-ignored) |
+| `toolchain*/`, `scans/`, `build/`, `dist/` | Local only (git-ignored) |
 
 ## On the camera (0.12)
 
@@ -33,53 +34,70 @@ The app opens straight into **inverted live view**: the camera's own image proce
 tone curve, so live view and captured JPEGs are positives (the RAW stays the untouched negative).
 
 - **Chips / up-down**: Black, White, Gamma, Temp, A–B, G–M. **Slider / left-right / dials**: adjust. Double-tap
-  the slider to reset. **Centre**: positive ↔ negative. **Shutter / round button**: capture.
+  the slider to reset. **Center**: positive ↔ negative. **Shutter / round button**: capture.
 - **Menu**: *Calibrate film base* (makes the clear film base neutral with the camera's white balance: the
   orange mask stops turning blue), *Auto levels* (black/white points from the frame, film border excluded),
   *Check alignment* (measures the film edge angle and says which way to rotate), alignment guides,
   2 s capture delay, silent shutter, themes, display flip, *Develop newest frame* (in-camera positive of the
   newest RAW+JPEG negative, auto-cropped), log, reset roll, exit.
 - Calibration and levels are kept per roll in `FILMINV/ROLL.TXT`.
-- **Themes**: 8 built in; add your own with [`tools/theme-maker.html`](tools/theme-maker.html) (open it in a
-  browser) and copy the `.JSN` file to `FILMINV/THEMES/` on the card.
+- **Themes**: 8 built in; make your own in the desktop tool's **Themes** tab (or `filminverter theme ...`),
+  which writes the `.JSN` file to `FILMINV/THEMES/` on the card.
 - Every camera setting the app changes is restored when it exits.
 
-## Quick start (Windows)
+## Desktop tool (Windows, macOS, Linux)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\setup.ps1     # JDK, Android SDK (API 10), jadx, PMCA-RE, sources
-. .\toolchain\env.ps1
-tools\build.ps1 -App PMCADemo                                # toolchain sanity check
-tools\build.ps1                                              # build\FilmInverter\FilmInverter.apk
-tools\install.ps1 build\FilmInverter\FilmInverter.apk          # camera in Mass Storage USB mode
-```
+One program, `filminverter`, as a window (run it with no arguments) or a command line:
 
-## Quick start (Linux, x86_64)
+| Command | What it does |
+|---|---|
+| `filminverter` / `gui` | Window with Camera, Develop, Themes and Developer tabs |
+| `doctor` | Checks this system and prints the exact install command for anything missing |
+| `install [apk] [--latest]` | Installs the app on the camera (USB Mass Storage mode), retrying through the mode switch |
+| `develop <folder> [--prefer raw] [--crop]` | Inverts a folder of scans on the computer (originals untouched) |
+| `theme list / export / install` | Camera UI themes (8.3 file names, as the camera requires) |
+| `card find / logs` | Finds the camera card; copies the app's log and outputs to the computer |
+| `setup`, `build` | Developer: download the toolchain (~1 GB) and build the camera app (needs a source checkout) |
+| `decompile <apk>`, `udev` | Developer: inspect a camera app; Linux USB permission rule |
 
-Same steps with the bash twins of the scripts. They use `toolchain-linux/` and `.venv-linux/`, so a
-checkout can be shared with Windows (e.g. WSL). Needs `curl unzip tar python3 python3-venv libusb-1.0-0`.
+**Get it:** single-file executables are attached to each [GitHub release](../../releases) (built and tested
+by CI). Or from source: `pip install -r tool/requirements.txt`, then `python tool/run.py`.
 
-```bash
-tools/first-run.sh                                           # setup + both builds + engine tests
-tools/build.sh                                               # build/FilmInverter/FilmInverter.apk
-sudo cp tools/linux/99-sony-camera.rules /etc/udev/rules.d/  # once: USB access to the camera
-tools/install.sh build/FilmInverter/FilmInverter.apk         # camera in Mass Storage USB mode
-```
+**Per system:**
+- **Windows:** run `filminverter-windows-x64.exe`. Nothing else needed.
+- **macOS:** `filminverter-macos-arm64` (Apple Silicon). The file isn't signed: the first time, right-click ›
+  Open, or run `xattr -d com.apple.quarantine filminverter-macos-arm64`.
+- **Linux (Debian/Ubuntu, Fedora, Arch):** `chmod +x filminverter-linux-x64`. For camera installs you need
+  libusb and a one-time USB permission rule (`filminverter udev` prints it). `filminverter doctor` names the
+  right packages for your distro, e.g. `sudo apt install libusb-1.0-0`, `sudo dnf install libusb1`,
+  `sudo pacman -S libusb`.
 
-Desktop engine:
+### What has been tested
 
-```powershell
-.venv\Scripts\python engine\invert_roll.py scans\roll01 --base-frame DSC01234.ARW --base-rect 0.01 0.4 0.03 0.6
-.venv\Scripts\python -m pytest engine\tests
-```
+| | Windows 10/11 x64 | macOS (Apple Silicon) | macOS (Intel) | Debian/Ubuntu | Fedora | Arch |
+|---|---|---|---|---|---|---|
+| Engine tests, develop (JPEG + RAW) | ✅ on the owner's PC | ⏳ CI | ⏳ CI (optional) | ⏳ CI | ⏳ CI | ⏳ CI |
+| Executable runs (smoke test) | ✅ | ⏳ CI | ⏳ CI (optional) | ⏳ CI | ⏳ CI (container) | ⏳ CI (container) |
+| GUI opens | ✅ (screenshots checked) | ⏳ CI | – | ⏳ CI (virtual display) | ❓ | ❓ |
+| Toolchain setup + app build | ✅ | ❓ | ❓ | ⏳ CI | ❓ | ❓ |
+| Install on the camera | ✅ (pmca-console, Proxmox VM USB passthrough) | ❓ | ❓ | ❓ | ❓ | ❓ |
+| Card detection / logs | ✅ code path, ❓ with the new tool | ❓ | ❓ | ❓ | ❓ | ❓ |
+
+✅ tested · ⏳ covered by the GitHub Actions workflow (`.github/workflows/tool.yml`), results below once it
+has run · ❓ needs testing on real hardware (camera USB on macOS/Linux is the biggest unknown: Sony-PMCA-RE
+runs from source with libusb on Linux, and its macOS binary is Intel-only, so Apple Silicon uses Rosetta).
+
+Desktop engine directly (from source): `python engine/invert_roll.py scans/roll01 --crop` and
+`python -m pytest engine/tests`.
 
 ## How the inversion works
 
-1. Linearise the scan (sRGB decode for JPEG; linear half-size demosaic for RAW).
-2. Divide each channel by the **film base** colour (clear unexposed film) → removes the orange mask.
+1. Linearize the scan (sRGB decode for JPEG; linear half-size demosaic for RAW).
+2. Divide each channel by the **film base** color (clear unexposed film) → removes the orange mask.
 3. Convert to density `D = -log10(v / base)`.
-4. Per-channel black/white points in density from the **whole roll** (0.1 / 99.9 percentiles, film-base
-   pixels ignored) → neutral greys and consistent colour across frames.
+4. Per-channel black/white points in density from the **whole roll** (0.1 / 99.9 percentiles), measured on
+   each frame's **picture area** only (film border, sprocket holes and unlit edges found and excluded
+   automatically; the film base is taken from the clear rebate) → neutral grays and consistent color.
 5. Print-style tone curve (contrast, gamma, temp/tint) → output.
 
 For 8-bit camera JPEGs this whole chain is three 256-entry lookup tables, which is why it is cheap

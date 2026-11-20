@@ -1,5 +1,5 @@
 """
-negengine - colour-negative inversion engine (desktop reference implementation).
+negengine - color-negative inversion engine (desktop reference implementation).
 
 This is the reference the in-camera Java/C code is ported from, so it is kept
 deliberately simple: plain numpy, no scipy, every step explicit.
@@ -8,12 +8,12 @@ Pipeline (per frame, sharing one RollProfile across the roll):
     1. load -> linear RGB float32 in [0, 1]
          - camera JPEG/TIFF: sRGB-decoded
          - ARW/DNG (if rawpy is installed): half-size, linear, no auto-bright
-    2. normalise each channel by the film base (clear, unexposed film) -> base == 1.0
+    2. normalize each channel by the film base (clear, unexposed film) -> base == 1.0
     3. density  D = -log10(v / base)          (0 at base, grows with exposure)
     4. per-channel black/white points in density, taken from the whole roll
-       (percentiles over each frame's *picture area*, see analyse_frame), which also
-       neutralises the different layer contrasts
-    5. normalised log-exposure p in [0, 1] -> print curve -> sRGB-ish output
+       (percentiles over each frame's *picture area*, see analyze_frame), which also
+       neutralizes the different layer contrasts
+    5. normalized log-exposure p in [0, 1] -> print curve -> sRGB-ish output
 
 Nothing here ever writes back to the source file.
 """
@@ -32,7 +32,7 @@ RAW_EXTS = {".arw", ".dng", ".nef", ".cr2", ".cr3", ".raf", ".orf", ".rw2"}
 
 
 # --------------------------------------------------------------------------- #
-# colour helpers
+# color helpers
 # --------------------------------------------------------------------------- #
 def srgb_to_linear(x: np.ndarray) -> np.ndarray:
     x = np.clip(x, 0.0, 1.0)
@@ -61,7 +61,7 @@ def load_linear(path: str | Path, raw_half_size: bool = True) -> np.ndarray:
                 gamma=(1, 1),                 # linear
                 no_auto_bright=True,
                 output_bps=16,
-                # White balance BEFORE the colour matrix, like the camera's own JPEG. With neutral (1,1,1,1) WB
+                # White balance BEFORE the color matrix, like the camera's own JPEG. With neutral (1,1,1,1) WB
                 # the camera->sRGB matrix mixes the unbalanced orange mask across channels, which the per-channel
                 # base division cannot undo (probe 2 cat frame: strong blue-violet cast). The base division still
                 # does the actual balancing; camera WB just keeps the matrix in its intended range.
@@ -115,13 +115,13 @@ LUM = np.array([0.2126, 0.7152, 0.0722], np.float32)
 FRAME_LINE_FRAC = 0.6     # a row/column is film border when >= 60% of its pixels look like border
 FRAME_MAX_BORDER = 0.25   # never treat more than 25% of a side as border
 FRAME_INSET = 0.015       # step this far inside a detected border (blurry gate edge)
-FRAME_BRIGHT_REL = 0.9    # "bright" = luminance >= 90% of the picture centre's 99th-percentile luminance
+FRAME_BRIGHT_REL = 0.9    # "bright" = luminance >= 90% of the picture center's 99th-percentile luminance
 FRAME_DARK = 0.004        # "unlit" = every channel below this (outside the film, no light)
 CLIP = 0.985              # any channel at or above this counts as clipped
 HOLE_RATIO = 1.25         # bright border pixels spanning more than this (p95/p5) contain sprocket holes
 FRAME_LINE_REL = 0.85     # a bright border line's median luminance must be >= 85% of the brightest edge line's
 FRAME_GAP = 0.03          # tolerate up to 3% of the side of non-border lines (edge markings) while peeling
-FRAME_MAX_SIDE = 600      # analyse a subsampled copy at most this long (the camera took 11 s at 1500 px)
+FRAME_MAX_SIDE = 600      # analyze a subsampled copy at most this long (the camera took 11 s at 1500 px)
 
 
 @dataclasses.dataclass
@@ -168,7 +168,7 @@ def _border_lines(lum: np.ndarray, bright: np.ndarray, dark: np.ndarray) -> Tupl
     return a, b
 
 
-def analyse_frame(lin: np.ndarray) -> FrameInfo:
+def analyze_frame(lin: np.ndarray) -> FrameInfo:
     """
     Find the picture area of a scanned negative and, from the film border around it, the film base.
 
@@ -179,11 +179,11 @@ def analyse_frame(lin: np.ndarray) -> FrameInfo:
     points to density ~2.5 and turns everything blue (probe 2 cat frame).
 
     Works on every s-th pixel (s chosen so the long side is <= FRAME_MAX_SIDE) and scales the result back;
-    NegEngine.analyseFrame subsamples the same way, so both engines give identical answers.
+    NegEngine.analyzeFrame subsamples the same way, so both engines give identical answers.
     """
     full_h, full_w, _ = lin.shape
     s = max(1, math.ceil(max(full_h, full_w) / FRAME_MAX_SIDE))
-    info = _analyse_small(lin[::s, ::s])
+    info = _analyze_small(lin[::s, ::s])
     if s == 1:
         return info
     x0, y0, x1, y1 = info.rect
@@ -281,15 +281,15 @@ def _edge_tilt(border_px: np.ndarray, y0: int, y1: int, x0: int, x1: int) -> Opt
     return float(np.mean(angles)) if angles else None
 
 
-def _analyse_small(lin: np.ndarray) -> FrameInfo:
+def _analyze_small(lin: np.ndarray) -> FrameInfo:
     h, w, _ = lin.shape
     lum = lin @ LUM
     mx = lin.max(axis=2)
     # Reference brightness from the middle of the frame, which is always picture: clear film base is at least
     # as bright as the thinnest picture area, sprocket holes are brighter still. (The whole frame's brightest
     # pixels are the holes, ~3x the base on the probe 2 frame, so they cannot be the reference.)
-    centre = lum[h // 4: h - h // 4, w // 4: w - w // 4]
-    ref = float(np.percentile(centre, 99.0))
+    center = lum[h // 4: h - h // 4, w // 4: w - w // 4]
+    ref = float(np.percentile(center, 99.0))
     bright = lum >= FRAME_BRIGHT_REL * ref
     dark = mx < FRAME_DARK
 
@@ -332,11 +332,11 @@ def picture_area(img: np.ndarray, info: FrameInfo) -> np.ndarray:
 
 def auto_base(lin: np.ndarray, top_fraction: float = 0.02, clip: float = CLIP) -> np.ndarray:
     """
-    Film base colour. First choice: the rebate found by analyse_frame (sprocket holes excluded).
+    Film base color. First choice: the rebate found by analyze_frame (sprocket holes excluded).
     Fallback when no film border is visible: the *brightest* film area, excluding pixels with any
     channel >= `clip` (bare light). Prefer an explicit rect (sample_rect) whenever possible.
     """
-    info = analyse_frame(lin)
+    info = analyze_frame(lin)
     if info.base is not None:
         return info.base
     px = lin.reshape(-1, 3)
@@ -422,12 +422,12 @@ def density_levels(densities: Iterable[np.ndarray], lo_pct: float, hi_pct: float
 
 
 def print_curve(p: np.ndarray, contrast: float, gamma: float) -> np.ndarray:
-    """Map normalised log-exposure p (0..1) to output (0..1, display referred)."""
+    """Map normalized log-exposure p (0..1) to output (0..1, display referred)."""
     p = np.clip(p, 0.0, 1.0)
     if gamma != 1.0:
         p = p ** (1.0 / gamma)
     if contrast != 1.0:
-        # symmetric S-curve around 0.5 via a scaled logistic, renormalised to hit 0 and 1
+        # symmetric S-curve around 0.5 via a scaled logistic, renormalized to hit 0 and 1
         k = 4.0 * contrast
         s = 1.0 / (1.0 + np.exp(-k * (p - 0.5)))
         s0 = 1.0 / (1.0 + math.exp(k * 0.5))
@@ -446,11 +446,11 @@ def invert(lin: np.ndarray, prof: RollProfile) -> np.ndarray:
         d = np.repeat(d.mean(axis=2, keepdims=True), 3, axis=2)
 
     if prof.d_lo is None or prof.d_hi is None:
-        lo, hi = density_levels([picture_area(d, analyse_frame(lin))], prof.lo_pct, prof.hi_pct)
+        lo, hi = density_levels([picture_area(d, analyze_frame(lin))], prof.lo_pct, prof.hi_pct)
     else:
         lo, hi = np.asarray(prof.d_lo, np.float32), np.asarray(prof.d_hi, np.float32)
 
-    # white-balance nudges are applied as density offsets (like a colour-head filtration)
+    # white-balance nudges are applied as density offsets (like a color-head filtration)
     span = (hi - lo)
     # temp: +R -B (warmer); tint: -G (more magenta). 1.0 ~= 5% of the channel's range.
     shift = np.array([prof.temp, -prof.tint, -prof.temp], np.float32) * 0.05 * span
@@ -462,7 +462,7 @@ def invert(lin: np.ndarray, prof: RollProfile) -> np.ndarray:
 
 
 def calibrate_roll(frames_lin: Sequence[np.ndarray], prof: RollProfile) -> RollProfile:
-    """Fill in d_lo/d_hi from all frames of a roll (keeps colour consistent across the roll)."""
-    lo, hi = density_levels((picture_area(to_density(f, prof.base), analyse_frame(f)) for f in frames_lin),
+    """Fill in d_lo/d_hi from all frames of a roll (keeps color consistent across the roll)."""
+    lo, hi = density_levels((picture_area(to_density(f, prof.base), analyze_frame(f)) for f in frames_lin),
                             prof.lo_pct, prof.hi_pct)
     return dataclasses.replace(prof, d_lo=lo.tolist(), d_hi=hi.tolist())

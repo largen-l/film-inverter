@@ -41,12 +41,12 @@ Not exercised in this run (no temp / shift changes in the log). Saved and restor
 - `LTL00004` (RAW+JPEG, plain curve, ordinary room scene): normal JPEG.
 - **`LTL00005` (RAW+JPEG, POSITIVE curve, top 800, the cat negative on the light source): the 6000×4000
   JPEG is a positive.** Cat and plants read as a positive (blue cast, mask not compensated), sprocket holes
-  are black, the dark desk around the strip is light grey. The ARW is the untouched negative.
+  are black, the dark desk around the strip is light gray. The ARW is the untouched negative.
 
 So `setExtendedGammaTable` before `takePicture` gives **full-resolution in-camera positives with no app-side
 processing**: Mode B (Scan) can capture positives directly, at camera speed. Remaining: cancel the orange
 mask before the curve (WB / matrix) and put the levels into the curve, so the JPEG needs no post-processing.
-`takePicture(null, null, null)` honours the camera's Quality (RAW+JPEG gives both files).
+`takePicture(null, null, null)` honors the camera's Quality (RAW+JPEG gives both files).
 
 ## Settings restore
 

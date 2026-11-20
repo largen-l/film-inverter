@@ -1,0 +1,116 @@
+# Cross-platform checks and builds for the Film Inverter desktop tool and the camera app.
+#   tests:    engine tests + tool from source (CLI and a GUI open/close) on Linux, Windows, macOS
+#   package:  single-file executables per OS/CPU (PyInstaller), each smoke-tested
+#   distros:  the Linux executable on Debian, Fedora and Arch containers
+#   apk:      toolchain setup + camera app build on Linux (the same code path Windows/macOS use)
+#   release:  on a v* tag, attach the executables and the APK to a GitHub release
+name: tool
+on:
+  push:
+    branches: [main]
+    paths: ["tool/**", "engine/**", "app/**", ".github/workflows/tool.yml"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install numpy pillow rawpy pytest
+      - run: python -m pytest -q engine/tests
+      - run: python tool/run.py doctor || true
+      - run: python tool/smoketest.py "python tool/run.py"
+      - name: GUI opens and closes (Linux under a virtual display)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb && FI_GUI_SELFTEST=1 xvfb-run -a python tool/run.py gui
+      - name: GUI opens and closes
+        if: runner.os != 'Linux'
+        shell: bash
+        run: FI_GUI_SELFTEST=1 python tool/run.py gui
+
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, name: linux-x64 }
+          - { os: windows-latest, name: windows-x64 }
+          - { os: macos-latest, name: macos-arm64 }
+          - { os: macos-13, name: macos-x64, optional: true }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional == true }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pyinstaller numpy pillow rawpy
+      - run: python tool/package.py
+      - name: Smoke test the executable
+        shell: bash
+        run: |
+          EXE=dist/filminverter; [ -f dist/filminverter.exe ] && EXE=dist/filminverter.exe
+          python tool/smoketest.py "$EXE"
+          mv "$EXE" "dist/filminverter-${{ matrix.name }}$( [ "${EXE##*.}" = exe ] && echo .exe )"
+      - uses: actions/upload-artifact@v4
+        with: { name: "filminverter-${{ matrix.name }}", path: dist/filminverter-* }
+
+  distros:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "ubuntu:24.04", "fedora:41", "archlinux:latest"]
+    runs-on: ubuntu-22.04
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: filminverter-linux-x64, path: dist }
+      - name: Python for the smoke-test script only (the executable bundles its own)
+        run: |
+          if command -v apt-get >/dev/null; then apt-get update && apt-get install -y python3 python3-numpy python3-pil;
+          elif command -v dnf >/dev/null; then dnf install -y python3 python3-numpy python3-pillow;
+          elif command -v pacman >/dev/null; then pacman -Sy --noconfirm python python-numpy python-pillow; fi
+      - run: chmod +x dist/filminverter-linux-x64 && python3 tool/smoketest.py dist/filminverter-linux-x64
+
+  apk:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - uses: actions/cache@v4
+        with:
+          path: toolchain-linux/downloads
+          key: toolchain-linux-${{ hashFiles('tool/filminverter/toolchain.py') }}
+      - run: python tool/run.py setup
+      - run: python tool/run.py build PMCADemo
+      - run: python tool/run.py build
+      - uses: actions/upload-artifact@v4
+        with: { name: FilmInverter-apk, path: build/FilmInverter/FilmInverter.apk }
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package, apk, distros]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Create the release with the executables and the APK
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          mv out/FilmInverter.apk "out/FilmInverter-${GITHUB_REF_NAME}.apk"
+          gh release create "$GITHUB_REF_NAME" out/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --notes "Desktop tool executables (Windows, macOS, Linux) and the camera app APK. See README for install steps."

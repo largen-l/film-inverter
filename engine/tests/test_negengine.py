@@ -1,7 +1,7 @@
 """
-Synthetic tests: build a fake colour negative from a known scene with a simple
+Synthetic tests: build a fake color negative from a known scene with a simple
 film model (orange mask + different layer contrasts), run the engine, and check
-that (a) grey stays grey, (b) tones stay in order, (c) the roll profile
+that (a) gray stays gray, (b) tones stay in order, (c) the roll profile
 round-trips. Run:  python -m pytest engine/tests   (or just python test_negengine.py)
 """
 import math
@@ -26,12 +26,12 @@ def make_negative(scene_lin: np.ndarray, exposure_offset: float = 0.0) -> np.nda
     return (LIGHT * 10.0 ** (-d)).astype(np.float32) * 1.45  # base lands at ~0.9: exposed to the right
 
 
-def grey_ramp(h=64, w=256):
+def gray_ramp(h=64, w=256):
     v = np.geomspace(0.01, 1.0, w, dtype=np.float32)
     return np.repeat(np.repeat(v[None, :, None], h, 0), 3, 2)
 
 
-def colour_chart():
+def color_chart():
     patches = np.array([
         [0.40, 0.20, 0.10], [0.10, 0.30, 0.60], [0.15, 0.45, 0.15],
         [0.60, 0.55, 0.10], [0.50, 0.10, 0.10], [0.18, 0.18, 0.18],
@@ -46,8 +46,8 @@ def with_base_strip(neg):
     return np.concatenate([base, neg], 1)
 
 
-def test_grey_stays_neutral():
-    neg = with_base_strip(make_negative(grey_ramp()))
+def test_gray_stays_neutral():
+    neg = with_base_strip(make_negative(gray_ramp()))
     base = ne.sample_rect(neg, (0.0, 0.0, 0.03, 1.0))
     prof = ne.RollProfile(base=base.tolist())
     pos = ne.invert(neg, prof)[:, 20:]               # skip the base strip
@@ -56,7 +56,7 @@ def test_grey_stays_neutral():
 
 
 def test_tones_monotonic():
-    neg = with_base_strip(make_negative(grey_ramp()))
+    neg = with_base_strip(make_negative(gray_ramp()))
     base = ne.sample_rect(neg, (0.0, 0.0, 0.03, 1.0))
     pos = ne.invert(neg, ne.RollProfile(base=base.tolist()))[:, 20:]
     lum = pos.mean(axis=(0, 2))
@@ -65,21 +65,21 @@ def test_tones_monotonic():
 
 
 def test_auto_base_close_to_true_base():
-    neg = with_base_strip(make_negative(grey_ramp()))
+    neg = with_base_strip(make_negative(gray_ramp()))
     true_base = ne.sample_rect(neg, (0.0, 0.0, 0.03, 1.0))
     guess = ne.auto_base(neg)
     assert np.allclose(guess, true_base, rtol=0.15), (guess, true_base)
 
 
 def test_roll_levels_consistent_across_frames():
-    # same chart shot at two exposures within one roll: roll levels keep the grey patch neutral in both
-    a = with_base_strip(make_negative(colour_chart(), 0.0))
-    b = with_base_strip(make_negative(np.concatenate([colour_chart(), grey_ramp(40, 240)], 0), 0.3))
+    # same chart shot at two exposures within one roll: roll levels keep the gray patch neutral in both
+    a = with_base_strip(make_negative(color_chart(), 0.0))
+    b = with_base_strip(make_negative(np.concatenate([color_chart(), gray_ramp(40, 240)], 0), 0.3))
     base = ne.sample_rect(a, (0.0, 0.0, 0.03, 1.0))
     prof = ne.calibrate_roll([a, b], ne.RollProfile(base=base.tolist()))
     pa = ne.invert(a, prof)
-    grey = pa[5:35, 12 + 5 * 40 + 5: 12 + 6 * 40 - 5].reshape(-1, 3).mean(0)
-    assert grey.max() - grey.min() < 0.04, grey
+    gray = pa[5:35, 12 + 5 * 40 + 5: 12 + 6 * 40 - 5].reshape(-1, 3).mean(0)
+    assert gray.max() - gray.min() < 0.04, gray
 
 
 def film_strip(scene):
@@ -98,12 +98,12 @@ def film_strip(scene):
 
 
 def scene_chart_and_ramp():
-    return np.concatenate([colour_chart(), grey_ramp(40, 240)], 0)
+    return np.concatenate([color_chart(), gray_ramp(40, 240)], 0)
 
 
 def test_frame_analysis_finds_picture_and_base():
     strip, true_base = film_strip(scene_chart_and_ramp())
-    info = ne.analyse_frame(strip)
+    info = ne.analyze_frame(strip)
     x0, y0, x1, y1 = info.rect
     assert info.border_found
     assert y1 <= 80 and y1 >= 70, info.rect          # picture is rows 0..79; border starts at 80
@@ -117,16 +117,16 @@ def test_auto_base_ignores_sprocket_holes():
 
 
 def test_auto_levels_ignore_film_border():
-    # fully automatic (auto base, per-frame levels): the grey patch must stay grey despite holes + unlit band
+    # fully automatic (auto base, per-frame levels): the gray patch must stay gray despite holes + unlit band
     strip, _ = film_strip(scene_chart_and_ramp())
     pos = ne.invert(strip, ne.RollProfile(base=ne.auto_base(strip).tolist()))
-    grey = pos[5:35, 5 * 40 + 5: 6 * 40 - 5].reshape(-1, 3).mean(0)
-    assert grey.max() - grey.min() < 0.04, grey
+    gray = pos[5:35, 5 * 40 + 5: 6 * 40 - 5].reshape(-1, 3).mean(0)
+    assert gray.max() - gray.min() < 0.04, gray
 
 
 def tilted_strip(slope: float):
     """Chart picture whose bottom edge (picture -> rebate) slopes by `slope` px per px: a slightly rotated film."""
-    scene = np.concatenate([colour_chart(), grey_ramp(40, 240), grey_ramp(40, 240)], 0)   # 120 x 240
+    scene = np.concatenate([color_chart(), gray_ramp(40, 240), gray_ramp(40, 240)], 0)   # 120 x 240
     neg = make_negative(scene)
     base_px = make_negative(np.full((1, 1, 3), 1e-4, np.float32))[0, 0]
     h, w, _ = neg.shape
@@ -140,14 +140,14 @@ def tilted_strip(slope: float):
 
 def test_tilt_measured_from_film_edge():
     slope = 0.026                                           # ~1.5 degrees, clockwise (right side lower)
-    info = ne.analyse_frame(tilted_strip(slope))
+    info = ne.analyze_frame(tilted_strip(slope))
     assert info.tilt_deg is not None, info
     assert abs(info.tilt_deg - math.degrees(math.atan(slope))) < 0.3, info.tilt_deg
 
 
 def test_no_tilt_on_straight_strip():
     strip, _ = film_strip(scene_chart_and_ramp())
-    info = ne.analyse_frame(strip)
+    info = ne.analyze_frame(strip)
     assert info.tilt_deg is not None and abs(info.tilt_deg) < 0.3, info.tilt_deg
 
 

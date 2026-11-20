@@ -1,7 +1,7 @@
 # Probe run 3: a6500, 2026-11-19
 
 Probe 0.3 (curve-format explorer). The log and the owner's 14 photos of the screen are kept locally in
-`logs/probe3/` (git-ignored). The scene was the `LTL00002` colour negative (cat) on a light source.
+`logs/probe3/` (git-ignored). The scene was the `LTL00002` color negative (cat) on a light source.
 
 ## Result: the extended gamma table format
 
@@ -20,7 +20,7 @@ Small **yellow speckles** appear in the brightest areas with #3 (in the shadows 
 probably values overflowing past the top of the output range further down the pipeline; next step: test
 headroom (max 1023 vs ~1000 vs ~960).
 
-To use it: `t = cameraEx.createGammaTable()` (2048 bytes, **uninitialised**, so always fill all of it),
+To use it: `t = cameraEx.createGammaTable()` (2048 bytes, **uninitialized**, so always fill all of it),
 `t.write(bytes)`, `cameraEx.setExtendedGammaTable(t)`, then release the previous table.
 `setExtendedGammaTable(null)` returns to the camera's own curve. Changes are instant.
 
@@ -45,7 +45,7 @@ Touch UI is viable; keys stay the primary input.
 
 ## Exit: clean
 
-With every table released and no colour-depth switching, leaving the explorer restored and released the
+With every table released and no color-depth switching, leaving the explorer restored and released the
 camera in ~150–190 ms, and exiting the app was clean (`onPause` logged, no freeze, no "recovering").
 The probe 2 freeze was most likely the 12 unreleased GammaTable buffers.
 

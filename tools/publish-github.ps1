@@ -55,6 +55,6 @@ git commit -m "Initial import: plan, desktop inversion engine, PMCA probe app, W
 
 $vis = if ($Private) { '--private' } else { '--public' }
 & gh repo create $Name $vis --source . --remote origin --push `
-    --description 'In-camera colour negative inversion for the Sony a6500 (PlayMemories/PMCA app) + desktop reference engine'
+    --description 'In-camera color negative inversion for the Sony a6500 (PlayMemories/PMCA app) + desktop reference engine'
 if ($LASTEXITCODE -ne 0) { throw 'gh repo create failed' }
 & gh repo view --web

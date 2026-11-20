@@ -34,7 +34,7 @@ final class OverlayViews {
     }
 
     /**
-     * Alignment guides over the live view: centre cross, thirds, and a 3:2 frame box inset from the edges,
+     * Alignment guides over the live view: center cross, thirds, and a 3:2 frame box inset from the edges,
      * so the film edges can be lined up with straight lines. Static drawing, toggled from the menu.
      */
     static final class Guides extends View {
@@ -57,7 +57,7 @@ final class OverlayViews {
             p.setStrokeWidth(2);
             c.drawLine(w / 2f - 14, h / 2f, w / 2f + 14, h / 2f, p);
             c.drawLine(w / 2f, h / 2f - 14, w / 2f, h / 2f + 14, p);
-            // 3:2 box at 92% of the width (or height), centred: line the film frame edges up with it
+            // 3:2 box at 92% of the width (or height), centered: line the film frame edges up with it
             float bw = w * 0.92f, bh = bw * 2f / 3f;
             if (bh > h * 0.92f) { bh = h * 0.92f; bw = bh * 1.5f; }
             float l = (w - bw) / 2f, t = (h - bh) / 2f;

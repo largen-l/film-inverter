@@ -1,0 +1,7 @@
+# Running the tool from source (python tool/run.py). Tk comes with Python on Windows/macOS;
+# on Linux install it with your package manager (see `python tool/run.py doctor`).
+numpy
+pillow
+rawpy
+# packaging the single-file executable (python tool/package.py)
+pyinstaller

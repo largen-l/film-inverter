@@ -62,27 +62,27 @@ CameraActivity does.
 
 | Button | keyCode | scanCode |
 |---|---|---|
-| Centre | 23 (DPAD_CENTER) | 232 |
+| Center | 23 (DPAD_CENTER) | 232 |
 | MENU | 82 (MENU) | 514 |
 | Down | 20 (DPAD_DOWN) | 108 |
 | Control wheel / dial step (repeats) | 0 | 528 |
 | unknown | 0 | 207 |
 
-Android key codes do arrive for centre and MENU, so both paths work.
+Android key codes do arrive for center and MENU, so both paths work.
 
 ## What went wrong in this run
 
 - The card had **no JPEG from today** (the frame was RAW only: `LTL00001.ARW`), so the probe inverted
   the newest old JPEG (`DCIM/10161009/LTL00017.JPG`). Its "base" came out neutral (0.90/0.90/0.88):
   not a negative.
-- The inversion was slow (a 1/4-size decode, then auto base…). The centre button was pressed before
+- The inversion was slow (a 1/4-size decode, then auto base…). The center button was pressed before
   "safe probes done", so the preview probe ran **at the same time**. MENU was then pressed; the app
   exited and `ExitCompletedReceiver` killed the process **before the positive was written**. No
   `DCIM/NTPTEST/*_POS.JPG` exists, so the playback question is still open.
 
 ## Fixes for probe 2
 
-1. Ignore centre until the safe probes are done; show a clear "WORKING…/DONE" status.
+1. Ignore center until the safe probes are done; show a clear "WORKING…/DONE" status.
 2. MENU while working → ask to press again (don't kill a half-written output).
 3. Null-safe preview probe + the CameraEx preview path.
 4. Read-only gamma/RGB-matrix probe; the actual inverting-table test is a separate, explicit button.

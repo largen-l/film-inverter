@@ -1,7 +1,7 @@
 @echo off
-rem Double-click me. Installs the toolchain into toolchain\ and builds the apps.
-rem Everything is logged to logs\first-run.log. Takes ~10-20 minutes the first time.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\first-run.ps1"
+rem Double-click me (Windows, from a source checkout): sets up the toolchain and builds the camera app.
+rem Needs Python 3.9+ (python.org). The same steps on any OS: python tool/run.py setup / build / gui
+python "%~dp0tool\run.py" doctor
+python "%~dp0tool\run.py" setup && python "%~dp0tool\run.py" build
 echo.
-echo Done. Log: %~dp0logs\first-run.log
 pause

@@ -1,6 +1,8 @@
 # toolchain, downloads, decompiled third-party code (never commit Sony's code)
 toolchain/
 toolchain-linux/
+toolchain-macos/
+dist/
 # test scans and outputs (large, personal)
 scans/*
 !scans/README.md

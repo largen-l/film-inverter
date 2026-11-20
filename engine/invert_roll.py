@@ -112,7 +112,7 @@ def main(argv=None) -> int:
     for p, img in frames.items():
         t = time.time()
         pos = ne.invert(img, prof)
-        info = ne.analyse_frame(img)
+        info = ne.analyze_frame(img)
         if args.crop:
             pos = ne.crop_to_picture(pos, info)
         ne.save_srgb(pos, out_dir / f"{p.stem}_POS.JPG")

@@ -13,7 +13,7 @@ import java.util.List;
  *   java -cp build NegEngineDesktopTest <roll folder> auto [python positives folder]
  *   java -cp build NegEngineDesktopTest <roll folder> <base x0> <base y0> <base x1> <base y1> [python positives folder]
  *
- * "auto" = base and picture area from NegEngine.analyseFrame (as invert_roll.py does by default);
+ * "auto" = base and picture area from NegEngine.analyzeFrame (as invert_roll.py does by default);
  * otherwise the base is sampled from the given pixel rectangle on the first frame.
  * Levels always come from each frame's picture area, as in negengine.calibrate_roll.
  * Input: *.JPG or *.PNG. Writes <roll>/positives_java/*_POS.png and, if a Python output folder is given,
@@ -40,7 +40,7 @@ public class NegEngineDesktopTest {
         for (File f : frames) {
             BufferedImage im = ImageIO.read(f);
             int[] px = im.getRGB(0, 0, im.getWidth(), im.getHeight(), null, 0, im.getWidth());
-            NegEngine.Frame fi = NegEngine.analyseFrame(px, im.getWidth(), im.getHeight());
+            NegEngine.Frame fi = NegEngine.analyzeFrame(px, im.getWidth(), im.getHeight());
             System.out.println(f.getName() + " frame " + fi);
             info.add(fi);
             if (fi.base != null) bases.add(fi.base);

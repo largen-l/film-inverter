@@ -41,9 +41,9 @@ import java.util.Map;
  *
  * Opens straight into inverted live view (hardware tone curve, see docs/api-usage/probe3.md).
  *   Chips / UP-DOWN: choose Black, White, Gamma, Temp, A–B, G–M.  Slider / LEFT-RIGHT / dials: change it.
- *   Double-tap the slider: reset.  CENTRE: positive <-> negative.  SHUTTER / round button: capture.
+ *   Double-tap the slider: reset.  CENTER: positive <-> negative.  SHUTTER / round button: capture.
  *   MENU / ☰: menu (calibrate base, auto levels, alignment check, guides, delay, silent shutter, theme, flip,
- *   develop newest frame, log, reset roll, exit). In the menu UP/DOWN move, CENTRE selects, MENU closes.
+ *   develop newest frame, log, reset roll, exit). In the menu UP/DOWN move, CENTER selects, MENU closes.
  *
  * Measurements (calibration, auto levels, alignment) take small JPEG-only captures with a plain curve
  * (3008x2000, quality 25), read them back and adjust the camera: the camera gives apps no live-view frames.
@@ -886,8 +886,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         }
     }
 
-    /** Median 8-bit code per channel in the centre `frac` of the shot. */
-    private static int[] centreMedian(Shot s, double frac) {
+    /** Median 8-bit code per channel in the center `frac` of the shot. */
+    private static int[] centerMedian(Shot s, double frac) {
         int[][] h = new int[3][256];
         int x0 = (int) (s.w * (1 - frac) / 2), x1 = s.w - x0, y0 = (int) (s.h * (1 - frac) / 2), y1 = s.h - y0;
         int n = 0;
@@ -908,9 +908,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
     }
 
-    /** ln(R/G), ln(B/G) of the film base in the centre of a measurement shot. */
+    /** ln(R/G), ln(B/G) of the film base in the center of a measurement shot. */
     private double[] baseRatios(Shot s, int[] codesOut) {
-        int[] m = centreMedian(s, 0.4);
+        int[] m = centerMedian(s, 0.4);
         System.arraycopy(m, 0, codesOut, 0, 3);
         double r = lin(Math.max(1, m[0])), g = lin(Math.max(1, m[1])), b = lin(Math.max(1, m[2]));
         return new double[]{Math.log(r / g), Math.log(b / g)};
@@ -924,13 +924,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     /**
-     * Make the clear film base neutral with the camera's own white balance (colour temperature + G–M shift),
-     * measured from small captures: 3 shots to learn how the base colour responds, then up to 2 correction
-     * steps. Afterwards the base is grey before our curve, so the inverted orange mask no longer turns blue;
+     * Make the clear film base neutral with the camera's own white balance (color temperature + G–M shift),
+     * measured from small captures: 3 shots to learn how the base color responds, then up to 2 correction
+     * steps. Afterwards the base is gray before our curve, so the inverted orange mask no longer turns blue;
      * "Black" is set so the base itself maps to black.
      */
     private void calibrateBase() {
-        showToast("Calibrating: clear film (base) in the centre, don't move…");
+        showToast("Calibrating: clear film (base) in the center, don't move…");
         shiftAB = 0;
         double m0 = 1e6 / (wbActive ? temp : 5500);
         int g0 = wbActive ? shiftGM : 0;
@@ -974,7 +974,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     /**
-     * Black/white points from the current frame's picture area (film border excluded via analyseFrame):
+     * Black/white points from the current frame's picture area (film border excluded via analyzeFrame):
      * thinnest 0.5% of the negative -> black, densest 0.5% -> white. Plain-curve shot, so the codes are in
      * the curve's input domain (x 1023/255).
      */
@@ -982,7 +982,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         showToast("Measuring levels…");
         try {
             Shot s = measureShot();
-            NegEngine.Frame fr = NegEngine.analyseFrame(s.px, s.w, s.h);
+            NegEngine.Frame fr = NegEngine.analyzeFrame(s.px, s.w, s.h);
             int[] hist = new int[256];
             int n = 0;
             for (int y = fr.y0; y < fr.y1; y += 2) for (int x = fr.x0; x < fr.x1; x += 2) {
@@ -1007,12 +1007,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         }
     }
 
-    /** Film-edge tilt from a measurement shot (NegEngine.analyseFrame), as a plain instruction. */
+    /** Film-edge tilt from a measurement shot (NegEngine.analyzeFrame), as a plain instruction. */
     private void checkAlignment() {
         showToast("Checking alignment…");
         try {
             Shot s = measureShot();
-            NegEngine.Frame fr = NegEngine.analyseFrame(s.px, s.w, s.h);
+            NegEngine.Frame fr = NegEngine.analyzeFrame(s.px, s.w, s.h);
             out("alignment: " + fr);
             if (Double.isNaN(fr.tiltDeg)) {
                 showToast("No film edge found: include some rebate (clear border) in the frame");
@@ -1057,7 +1057,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             int[] px = new int[w * h];
             bm.getPixels(px, 0, w, 0, 0, w, h);
             bm.recycle();
-            NegEngine.Frame fr = NegEngine.analyseFrame(px, w, h);
+            NegEngine.Frame fr = NegEngine.analyzeFrame(px, w, h);
             NegEngine.Profile p = new NegEngine.Profile();
             p.base = fr.base != null ? fr.base : fallbackBase(px);
             NegEngine.Histogram hist = new NegEngine.Histogram(p);

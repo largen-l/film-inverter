@@ -12,7 +12,7 @@ import com.sony.scalar.sysutil.ScalarInput;
  *
  * Adapted from ma1co/PMCADemo BaseActivity (MIT License, Copyright (c) 2015 ma1co):
  *  - on resume, broadcast DAConnectionManagerService.AppInfoReceive so the camera knows which app is in front
- *  - switch the display to high colour depth while we are shown
+ *  - switch the display to high color depth while we are shown
  *  - camera buttons arrive as Sony scan codes (ScalarInput.ISV_KEY_*), not reliably as Android key codes
  */
 public abstract class SonyActivity extends Activity {
@@ -27,7 +27,7 @@ public abstract class SonyActivity extends Activity {
             displayManager.setColorDepth(DisplayManager.ColorDepth.HIGH);
         } catch (Throwable t) {
             displayManager = null;   // not on a camera (or API missing): keep going
-            logWarning("DisplayManager / colour depth", t);
+            logWarning("DisplayManager / color depth", t);
         }
         try {
             notifyAppInfo();
@@ -51,7 +51,7 @@ public abstract class SonyActivity extends Activity {
         }
     }
 
-    /** PMCADemo uses LOW colour depth while camera live view is on screen, HIGH otherwise. */
+    /** PMCADemo uses LOW color depth while camera live view is on screen, HIGH otherwise. */
     protected void setDisplayColorDepth(boolean high) {
         if (displayManager == null) return;
         try {

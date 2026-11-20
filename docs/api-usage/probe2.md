@@ -1,19 +1,19 @@
 # Probe run 2: a6500, 2026-11-19
 
 Probe 0.2 (`com.filminverter`). The raw log, `FIGAMMA.BIN` and the owner's photo of the screen are kept
-locally in `logs/probe2/` (git-ignored). Test frame: `LTL00002` (RAW+JPEG, colour negative of a cat,
+locally in `logs/probe2/` (git-ignored). Test frame: `LTL00002` (RAW+JPEG, color negative of a cat,
 sprocket holes and rebate visible at the bottom).
 
 ## Live view tone curve: works, format unknown
 
 - `ParametersModifier.isExtendedGammaTableSupported()` = **true**.
 - By default the camera has **no** extended table: `getExtendedGammaTable()` = null.
-- `createGammaTable()` returns a **2048-byte** buffer that is *not* initialised: it held a `0xAA` fill with
+- `createGammaTable()` returns a **2048-byte** buffer that is *not* initialized: it held a `0xAA` fill with
   random bit flips, different on each run. The probe "inverted" that garbage.
 - `setExtendedGammaTable(t)` **changed live view instantly**, and reading the table back matched what was
   written. `setExtendedGammaTable(null)` returned live view to normal.
-- The result was mostly white with sharp coloured contour lines (owner's photo): a garbage curve.
-  **Coloured** contours suggest the table holds separate per-channel curves.
+- The result was mostly white with sharp colored contour lines (owner's photo): a garbage curve.
+  **Colored** contours suggest the table holds separate per-channel curves.
 
 So the hardware path for inverted live view is real; what's missing is the table layout. Probe 3 builds
 clean identity/inverted curves in 13 candidate layouts (1×1024 / 4×256 planar or interleaved / 1×512 u32 /
@@ -40,8 +40,8 @@ registration: an M2 question.
 
 After two explorer runs, exiting froze the camera; it showed a "recovering" message and needed a power
 cycle. The log ends normally (`=== exit ===`), so the hang came after our code returned. Suspects:
-GammaTable buffers never released (12 created), the null-restore, the colour-depth switching. Probe 3
-releases every table, drops the colour-depth switching and logs each lifecycle step with timestamps.
+GammaTable buffers never released (12 created), the null-restore, the color-depth switching. Probe 3
+releases every table, drops the color-depth switching and logs each lifecycle step with timestamps.
 
 ## Touch
 
