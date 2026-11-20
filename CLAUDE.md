@@ -31,7 +31,10 @@ Done:
 - **Probe 2** (0.2-probe, `com.filminverter`) installed on the camera 2026-11-19: busy/ready status,
   RAW+JPEG pair only, Sony time, CameraEx live view tests (preview frames, gamma table read → saved to
   `FIGAMMA.BIN`, R/B matrix swap, two inverted gamma variants, all restored), touch test (on-screen
-  buttons + every touch logged). Results pending.
+  buttons + every touch logged). Results in `docs/api-usage/probe2.md`: the tone curve applies to live
+  view instantly; table format unknown (2048 bytes, uninitialised by default); exit froze the camera.
+- **Probe 3** (0.3-probe) installed 2026-11-19: interactive curve-format explorer (13 layouts,
+  plain/inverted), tables released, positives to `/FILMINV/`, exit steps logged. Results pending.
 - **Linux**: `tools/*.sh` twins of the PowerShell scripts (toolchain-linux/, .venv-linux/, PMCA-RE run
   from source). **Not yet run on Linux.** WSL2 can't start on this PC (Proxmox VM without nested
   virtualisation); the owner can provide SSH to a Linux VM/LXC for testing.
