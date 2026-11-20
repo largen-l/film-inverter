@@ -54,6 +54,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     @Override
     protected void onCreate(Bundle b) {
+        try {
+            log = new PrintWriter(new FileWriter(new File(Environment.getExternalStorageDirectory(), "AFSPROBE.TXT"), true));
+        } catch (Exception e) {
+            log = null;
+        }
+        installCrashLogger();
         super.onCreate(b);
         FrameLayout root = new FrameLayout(this);
         surface = new SurfaceView(this);
@@ -69,11 +75,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         root.addView(scroll);
         setContentView(root);
 
-        try {
-            log = new PrintWriter(new FileWriter(new File(Environment.getExternalStorageDirectory(), "AFSPROBE.TXT"), true));
-        } catch (Exception e) {
-            log = null;
-        }
         out("=== Neg Inverter probe " + new java.util.Date() + " ===");
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
     }
@@ -92,6 +93,29 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private void err(String what, Throwable t) {
         out("!! " + what + ": " + t);
         if (log != null) { t.printStackTrace(log); log.flush(); }
+    }
+
+    @Override
+    protected void logWarning(String what, Throwable t) { err(what, t); }
+
+    /**
+     * Any crash the probes do not catch themselves (UI thread, lifecycle, a missing Sony class) is
+     * written to AFSPROBE.TXT with its stack trace before the app dies, then handed to the default handler.
+     */
+    private void installCrashLogger() {
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            public void uncaughtException(Thread th, Throwable t) {
+                try {
+                    PrintWriter w = log != null ? log : new PrintWriter(new FileWriter(
+                            new File(Environment.getExternalStorageDirectory(), "AFSPROBE.TXT"), true));
+                    w.println("!! CRASH in thread " + th.getName() + " at " + new java.util.Date() + ": " + t);
+                    t.printStackTrace(w);
+                    w.flush();
+                } catch (Throwable ignored) {}
+                if (prev != null) prev.uncaughtException(th, t);
+            }
+        });
     }
 
     // ------------------------------------------------------------------ probes

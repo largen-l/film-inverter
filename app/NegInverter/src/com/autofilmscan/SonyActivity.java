@@ -27,9 +27,17 @@ public abstract class SonyActivity extends Activity {
             displayManager.setColorDepth(DisplayManager.ColorDepth.HIGH);
         } catch (Throwable t) {
             displayManager = null;   // not on a camera (or API missing): keep going
+            logWarning("DisplayManager / colour depth", t);
         }
-        notifyAppInfo();
+        try {
+            notifyAppInfo();
+        } catch (Throwable t) {
+            logWarning("AppInfoReceive broadcast", t);
+        }
     }
+
+    /** Non-fatal problems in the Sony glue; subclasses route this to their log. */
+    protected void logWarning(String what, Throwable t) {}
 
     @Override
     protected void onPause() {

@@ -56,8 +56,17 @@ Desktop engine:
 For 8-bit camera JPEGs this whole chain is three 256-entry lookup tables, which is why it is cheap
 enough for the camera's Cortex-A5 CPUs.
 
+## Authorship
+
+All code, scripts and documentation in this repository were written by **Claude** (Anthropic's AI
+model), working in [Claude Code](https://claude.com/claude-code) and directed by the repository owner,
+who set the goals, owns the camera and runs the on-camera tests. Commits carry a
+`Co-Authored-By: Claude` trailer. The parts adapted from other projects are listed under Credits.
+
 ## Credits
 
+`SonyActivity.java` and `ExitCompletedReceiver.java` are adapted from
+[PMCADemo](https://github.com/ma1co/PMCADemo) (MIT, © 2015 ma1co).
 [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE) and
 [OpenMemories](https://github.com/ma1co/OpenMemories-Framework) by ma1co and contributors;
 [Recipe Lab](https://github.com/voxivoid/recipe-lab-sony-pmca) for showing what settings writes look like on these bodies.
