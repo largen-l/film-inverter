@@ -5,7 +5,7 @@ owner's **Sony a6500**, built as a PMCA Android app. Read `docs/plan.md` first, 
 
 ## Where things stand (2026-11-19)
 
-Done (written and tested in a cloud sandbox, NOT yet run on Windows or the camera):
+Done:
 - `engine/negengine.py` + `invert_roll.py`: Python reference engine. 6 synthetic tests pass
   (`engine/tests/test_negengine.py`): grey stays neutral, tones monotonic, auto-base, roll-level
   consistency, profile round-trip. Fixed: film rebate in frame used to drag the black point; level
@@ -13,11 +13,14 @@ Done (written and tested in a cloud sandbox, NOT yet run on Windows or the camer
 - `app/FilmInverter/.../engine/NegEngine.java`: LUT port for 8-bit JPEGs. Verified against the Python
   engine on a synthetic roll: mean abs diff ≈0.65/255 (JPEG rounding), identical levels.
   Desktop check: `test/NegEngineDesktopTest.java` (see header for commands).
-- `app/FilmInverter/src/com/filminverter/MainActivity.java`: **M0 probe app** (never compiled against
-  android.jar yet; the sandbox had no Android SDK). Writes `FIPROBE.TXT` to the card root.
+- `app/FilmInverter/src/com/filminverter/MainActivity.java`: **M0 probe app**. Writes `FIPROBE.TXT`
+  to the card root. **Probe run 1 done on the camera (2026-11-19)**, findings in
+  `docs/api-usage/probe1.md`: a6500 = Android 4.1.2 / API 16, 24 MB heap; CameraEx has gamma-table and
+  RGB-matrix setters (inverted live view lead is real at the API level); the preview probe NPE'd; no
+  positive was written (RAW-only frame, then exited mid-inversion). Probe 2 fixes are listed there.
 - `tools/*.ps1`: setup / build (aapt → javac → d8 → zipalign → apksigner v1, no Gradle) / install /
-  decompile / publish-github. setup/build/first-run/publish **work on Windows** (2026-11-19): PMCADemo
-  and FilmInverter both build; FilmInverter.apk verifies v1-signed for API 10. install/decompile untested.
+  decompile / publish-github. setup/build/first-run/publish/install **work on Windows** (2026-11-19):
+  PMCADemo and FilmInverter both build; FilmInverter.apk verifies v1-signed for API 10. decompile untested.
   Build notes: OpenMemories stubs are Jasmin `.j` (assembled with jasmin 2.4); the framework compiles
   against android-16; d8/apksigner are run as jars (their .bat wrappers need the legacy SDK `tools/`).
   git/gh are portable copies in `toolchain\` (on PATH via env.ps1).

@@ -7,7 +7,8 @@ Condensed from the original planning doc (2026-11-19).
 - a6500 = **CXD90014** (BIONZ X), 4× Cortex-A5. Not one of the signed-firmware chips (CXD90045/57), so
   Sony-PMCA-RE's updater shell should work (code runs in update mode; firmware untouched). There is
   **no CFW** for the a6500, and none is needed.
-- Custom apps: Android app targeting **API 10 (Android 2.3.x)** per Sony-PMCA-RE. Installed via
+- Custom apps: Android app built for **API 10 (Android 2.3.x)** per Sony-PMCA-RE. The a6500 itself runs
+  **Android 4.1.2 (API 16)** with a **24 MB heap** (probe 1, `docs/api-usage/probe1.md`). Installed via
   `pmca-console install -f app.apk`. Owner has confirmed app installs work on this body.
 - Sony APIs via OpenMemories-Framework (wrappers) + stubs (compile-only).
 - Native code is viable (Recipe Lab ships JNI). For API 10 the last suitable NDK is r16b.
