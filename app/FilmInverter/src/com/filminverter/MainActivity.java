@@ -193,41 +193,35 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         root.addView(overlay);
         setContentView(root);
 
-        try { flipMode = getSharedPreferences("fi", MODE_PRIVATE).getInt("flip", 0); } catch (Throwable ignored) {}
+        try {
+            android.content.SharedPreferences prefs = getSharedPreferences("fi", MODE_PRIVATE);
+            int old = prefs.getInt("flip", 0);                       // 0.9's 4 modes: 1 and 2 flipped the window
+            flipMode = prefs.getInt("flip2", old == 1 || old == 2 ? 1 : 0);
+        } catch (Throwable ignored) {}
         applyWindowFlip();
         setStatus(BUSY, "WORKING... please wait");
-        out("=== Film Inverter probe 9, " + now() + " ===  flip mode " + FLIP_NAMES[flipMode]);
+        out("=== Film Inverter probe 10, " + now() + " ===  flip " + FLIP_NAMES[flipMode]);
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
     }
 
     // ------------------------------------------------------------------ display flip (owner's rig: screen upside down)
-    // Sony's avio.DisplayManager only reports DeviceStatus.viewPattern (no setter), so try the Android ways:
-    // rotate the window (buttons, text, touch) and/or rotate the camera preview. Which combination turns both the
-    // live view and the buttons upside down can only be seen on the camera, hence 4 modes.
-    private static final String[] FLIP_NAMES = {"1 normal", "2 buttons flipped", "3 buttons + live view flipped",
-            "4 live view flipped"};
+    // Sony's avio.DisplayManager only reports DeviceStatus.viewPattern (no setter). Probe 0.9 tested the Android
+    // ways: rotating the window (reverse landscape) turns everything upside down, live view included; the camera
+    // ignores Camera.setDisplayOrientation(180). So Flip = window rotation, on/off.
+    private static final String[] FLIP_NAMES = {"off", "on (upside down)"};
     private int flipMode;
 
     private void applyWindowFlip() {
-        boolean flipWindow = flipMode == 1 || flipMode == 2;
         try {
-            setRequestedOrientation(flipWindow ? 8 /* SCREEN_ORIENTATION_REVERSE_LANDSCAPE, API 9 */
+            setRequestedOrientation(flipMode == 1 ? 8 /* SCREEN_ORIENTATION_REVERSE_LANDSCAPE, API 9 */
                     : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         } catch (Throwable t) { err("flip window", t); }
     }
 
-    private void applyPreviewFlip() {
-        if (cameraEx == null) return;
-        try {
-            cameraEx.getNormalCamera().setDisplayOrientation(flipMode >= 2 ? 180 : 0);
-        } catch (Throwable t) { err("flip preview", t); }
-    }
-
     private void cycleFlip() {
-        flipMode = (flipMode + 1) % FLIP_NAMES.length;
-        try { getSharedPreferences("fi", MODE_PRIVATE).edit().putInt("flip", flipMode).commit(); } catch (Throwable ignored) {}
+        flipMode = 1 - flipMode;
+        try { getSharedPreferences("fi", MODE_PRIVATE).edit().putInt("flip2", flipMode).commit(); } catch (Throwable ignored) {}
         applyWindowFlip();
-        applyPreviewFlip();
         out("flip mode " + FLIP_NAMES[flipMode]);
         final String msg = "Flip: " + FLIP_NAMES[flipMode];
         ui.post(new Runnable() { public void run() { status.setText(msg); } });
@@ -458,7 +452,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 wbTouched = true;                                // forces the restore on exit
             }
             cam.setPreviewDisplay(surface.getHolder());
-            applyPreviewFlip();
             cam.startPreview();
             positive = true;
             applyCurve();
@@ -690,7 +683,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try {
             final Camera cam = cameraEx.getNormalCamera();
             final boolean pos = positive;
-            final long startedAt = System.currentTimeMillis();
+            // Which JPEG did this capture write? Compare against the newest JPEG *before* the shot, using only the
+            // card's file times (the app's own clock says 1970, so 0.9's "newer than now" check always passed).
+            final File before = newestDcimJpeg();
             try { out("    storage-fmt at capture: " + cam.getParameters().get("storage-fmt")); } catch (Throwable ignored) {}
             out("    " + now() + "  CAPTURE with curve " + curveText());
             setStatus(LIVE, "Capturing... wait");
@@ -708,18 +703,26 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                     try {
                         if (cameraEx == null) return;                 // left live view meanwhile
                         try { cam.startPreview(); } catch (Throwable t) { err("restart preview after capture", t); }
-                        File jpg = newestDcimJpeg();
-                        // only a JPEG written by this capture counts (0.8 listed an old negative's JPEG when the
-                        // capture was RAW-only); file times have 2 s resolution on FAT/exFAT
-                        if (jpg != null && jpg.lastModified() < startedAt - 2500) jpg = null;
-                        out("    JPEG from this capture: " + (jpg == null ? "none (RAW only?)" : jpg.getAbsolutePath()));
-                        if (pos && jpg != null) rememberPositiveCapture(jpg.getName());
                         updateStatusLine();
                     } finally {
                         capturing = false;
                     }
                 }
             }, 3000);
+            // Find the new JPEG in the background: it can appear later than 3 s (0.9 picked the previous file).
+            new Thread(new Runnable() {
+                public void run() {
+                    File jpg = null;
+                    for (int i = 0; i < 20 && jpg == null; i++) {
+                        try { Thread.sleep(500); } catch (InterruptedException e) { return; }
+                        File n = newestDcimJpeg();
+                        if (n != null && (before == null || (!n.getAbsolutePath().equals(before.getAbsolutePath())
+                                && n.lastModified() >= before.lastModified()))) jpg = n;
+                    }
+                    out("    JPEG from this capture: " + (jpg == null ? "none within 10 s (RAW only?)" : jpg.getAbsolutePath()));
+                    if (pos && jpg != null) rememberPositiveCapture(jpg.getName());
+                }
+            }).start();
         } catch (Throwable t) {
             capturing = false;
             err("capture", t);

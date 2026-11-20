@@ -47,6 +47,18 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
 - Bug: with no new JPEG, the newest *old* JPEG (`LTL00009`, a real negative) was recorded as a positive capture.
   0.9 only accepts a JPEG written after the capture started; `CAPTURED.TXT` was cleaned by hand.
 
+## 0.9 results → 0.10
+
+- **Flip:** modes 2 and 3 (window rotated via reverse landscape) turn everything upside down, live view included;
+  modes 1 and 4 look identical, so the camera ignores `Camera.setDisplayOrientation(180)`. 0.10: Flip on/off =
+  window rotation only.
+- Double-tap reset works. RAW+JPEG forcing works (`storage-fmt` = `rawjpeg` at capture, restored on exit).
+- In-app captures `LTL00013` (gamma 0.85) and `LTL00015` (gamma 1.15) are full-res positives with a cyan-blue
+  cast; neither had the warm WB on (camera's custom WB at capture), so the 2700 K test is still open.
+- Capture→JPEG matching was still wrong (named the previous file): the app clock is 1970 while file times are
+  real, and the JPEG can take > 3 s to appear. 0.10 compares against the newest JPEG *before* the shot and polls
+  up to 10 s, using only file times.
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and

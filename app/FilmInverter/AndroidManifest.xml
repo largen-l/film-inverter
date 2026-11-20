@@ -6,8 +6,8 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.filminverter"
-    android:versionCode="9"
-    android:versionName="0.9-probe">
+    android:versionCode="10"
+    android:versionName="0.10-probe">
 
     <uses-sdk android:minSdkVersion="10" android:targetSdkVersion="10" />
 
