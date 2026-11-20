@@ -48,8 +48,9 @@ import java.util.Map;
  *   CENTRE (or "Pos/Neg")              = positive (inverted curve) <-> negative (plain curve)
  *   SHUTTER (or "Capture")             = take a picture with the current curve: is the JPEG a positive?
  *   MENU (or "Back")                   = leave live view (everything restored), MENU again = exit
- * Rows: curve top (headroom against the yellow speckles), colour temperature, WB shift amber-blue,
- *       WB shift green-magenta (to cancel the orange mask), RGB matrix identity scale test.
+ * Rows: input white (film base -> black), input black, gamma (levels built into the curve), colour temperature,
+ *       WB shift amber-blue, WB shift green-magenta (to cancel the orange mask), RGB matrix test patterns.
+ * Capture releases the shutter (cancelTakePicture) after ~300 ms so the next capture works (probe 5 bug).
  * Every camera setting touched is saved first and restored (and read back) when leaving live view.
  */
 public class MainActivity extends SonyActivity implements SurfaceHolder.Callback {
@@ -77,12 +78,21 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private boolean positive = true;
 
     // ------------------------------------------------------------------ adjustable rows
-    private static final int ROW_CURVE = 0, ROW_TEMP = 1, ROW_AB = 2, ROW_GM = 3, ROW_MATRIX = 4;
-    private static final String[] ROW_NAMES = {"Curve top", "Colour temp", "WB amber-blue", "WB green-magenta", "Matrix scale test"};
-    private static final int[] CURVE_TOPS = {1023, 1008, 992, 960, 900, 800};
-    private static final int[] MATRIX_SCALES = {0, 1, 64, 100, 128, 256, 512, 1000, 1024, 4096};   // 0 = matrix off
-    private int row = ROW_CURVE;
-    private int curveIdx = 2;          // 992: a little headroom by default
+    // Rows. Curve levels work on the table's input (0..1023, the camera's signal before our curve):
+    // POSITIVE maps input "white" (the film base: thinnest negative) to black and input "black" to white.
+    private static final int ROW_HI = 0, ROW_LO = 1, ROW_GAMMA = 2, ROW_TEMP = 3, ROW_AB = 4, ROW_GM = 5, ROW_MATRIX = 6;
+    private static final String[] ROW_NAMES = {"Input white (base)", "Input black", "Gamma", "Colour temp",
+            "WB amber-blue", "WB green-magenta", "Matrix pattern"};
+    // Probe 4: the matrix is live but identity-at-scale-N barely changed anything. These patterns are chosen to
+    // look obviously different depending on what the numbers mean (absolute matrix vs offset from identity).
+    private static final String[] MATRIX_LABELS = {"off", "1 all zeros", "2 red only 256", "3 red only 1024",
+            "4 red only 4096", "5 swap R/B 1024", "6 swap R/B 4096", "7 minus blue -1024", "8 minus blue -4096"};
+    private static final String[] MATRIX_VALUES = {null, "0,0,0,0,0,0,0,0,0", "256,0,0,0,0,0,0,0,0",
+            "1024,0,0,0,0,0,0,0,0", "4096,0,0,0,0,0,0,0,0", "0,0,1024,0,1024,0,1024,0,0", "0,0,4096,0,4096,0,4096,0,0",
+            "0,0,0,0,0,0,0,0,-1024", "0,0,0,0,0,0,0,0,-4096"};
+    private int row = ROW_HI;
+    private int inHi = 1023, inLo = 0; // table input range mapped to the full output range, step 8
+    private int gammaX100 = 100;       // 50..250: output = x^(1/gamma)
     private int temp = 5500;           // 2500..9900 step 100
     private int shiftAB = 0, shiftGM = 0;   // -32..32
     private int matrixIdx = 0;
@@ -161,7 +171,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         setContentView(root);
 
         setStatus(BUSY, "WORKING... please wait");
-        out("=== Film Inverter probe 5, " + now() + " ===");
+        out("=== Film Inverter probe 6, " + now() + " ===");
         new Thread(new Runnable() { public void run() { runSafeProbes(); } }).start();
     }
 
@@ -400,11 +410,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private synchronized void applyCurve() {
         if (cameraEx == null) return;
         try {
-            int top = CURVE_TOPS[curveIdx];
             CameraEx.GammaTable t = cameraEx.createGammaTable();
             byte[] b = new byte[t.getSize()];                 // the buffer is uninitialised: fill all of it
+            double span = Math.max(8, inHi - inLo), g = gammaX100 / 100.0;
             for (int i = 0; i < 1024 && 2 * i + 1 < b.length; i++) {
-                int v = (int) Math.round((positive ? 1023 - i : i) * top / 1023.0);
+                double x = positive ? (inHi - i) / span : (i - inLo) / span;
+                x = Math.max(0, Math.min(1, x));
+                int v = (int) Math.round(1023 * Math.pow(x, 1.0 / g));
                 b[2 * i] = (byte) v;
                 b[2 * i + 1] = (byte) (v >> 8);
             }
@@ -413,7 +425,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             CameraEx.GammaTable old = activeTable;
             activeTable = t;
             if (old != null) { try { old.release(); } catch (Throwable r) { err("release old table", r); } }
-            out("    " + now() + "  curve " + (positive ? "POSITIVE" : "NEGATIVE") + " top=" + top);
+            out("    " + now() + "  curve " + curveText());
             updateStatusLine();
         } catch (Throwable t) {
             err("apply curve", t);
@@ -441,9 +453,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         }
     }
 
+    private String curveText() {
+        return (positive ? "POSITIVE" : "NEGATIVE") + " in " + inLo + ".." + inHi + " gamma " + (gammaX100 / 100.0);
+    }
+
     private void applyRow() {
         switch (row) {
-            case ROW_CURVE: applyCurve(); break;
+            case ROW_HI: case ROW_LO: case ROW_GAMMA: applyCurve(); break;
             case ROW_TEMP:
                 wbTouched = true;
                 setParams("whitebalance", "color-temp", "color-temperture-white-balance", String.valueOf(temp));
@@ -455,9 +471,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 break;
             case ROW_MATRIX:
                 matrixTouched = true;
-                int s = MATRIX_SCALES[matrixIdx];
-                if (s == 0) setParams("rgb-matrix-mode", "false");
-                else setParams("rgb-matrix-mode", "true", "rgb-matrix", s + ",0,0,0," + s + ",0,0,0," + s);
+                if (MATRIX_VALUES[matrixIdx] == null) setParams("rgb-matrix-mode", "false");
+                else setParams("rgb-matrix-mode", "true", "rgb-matrix", MATRIX_VALUES[matrixIdx]);
+                out("    matrix pattern " + MATRIX_LABELS[matrixIdx]);
                 break;
         }
         refreshRow();
@@ -465,28 +481,34 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     private String rowValueText(int r) {
         switch (r) {
-            case ROW_CURVE: return String.valueOf(CURVE_TOPS[curveIdx]);
+            case ROW_HI: return String.valueOf(inHi);
+            case ROW_LO: return String.valueOf(inLo);
+            case ROW_GAMMA: return String.valueOf(gammaX100 / 100.0);
             case ROW_TEMP: return temp + " K";
             case ROW_AB: return (shiftAB > 0 ? "B+" : shiftAB < 0 ? "A+" : "") + Math.abs(shiftAB);
             case ROW_GM: return (shiftGM > 0 ? "M+" : shiftGM < 0 ? "G+" : "") + Math.abs(shiftGM);
-            default: return MATRIX_SCALES[matrixIdx] == 0 ? "off" : "identity x" + MATRIX_SCALES[matrixIdx];
+            default: return MATRIX_LABELS[matrixIdx];
         }
     }
 
     private int[] sliderRange() {   // {max, progress}
         switch (row) {
-            case ROW_CURVE: return new int[]{CURVE_TOPS.length - 1, curveIdx};
+            case ROW_HI: return new int[]{1023 / 8, inHi / 8};
+            case ROW_LO: return new int[]{1023 / 8, inLo / 8};
+            case ROW_GAMMA: return new int[]{(250 - 50) / 5, (gammaX100 - 50) / 5};
             case ROW_TEMP: return new int[]{(9900 - 2500) / 100, (temp - 2500) / 100};
             case ROW_AB: return new int[]{64, shiftAB + 32};
             case ROW_GM: return new int[]{64, shiftGM + 32};
-            default: return new int[]{MATRIX_SCALES.length - 1, matrixIdx};
+            default: return new int[]{MATRIX_LABELS.length - 1, matrixIdx};
         }
     }
 
     private void setRowValueFromSlider(int p) {
         if (state != LIVE) return;
         switch (row) {
-            case ROW_CURVE: curveIdx = p; break;
+            case ROW_HI: inHi = Math.max(inLo + 8, Math.min(1023, p * 8 + 7)); break;
+            case ROW_LO: inLo = Math.min(inHi - 8, p * 8); break;
+            case ROW_GAMMA: gammaX100 = 50 + 5 * p; break;
             case ROW_TEMP: temp = 2500 + 100 * p; break;
             case ROW_AB: shiftAB = p - 32; break;
             case ROW_GM: shiftGM = p - 32; break;
@@ -497,11 +519,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     private void stepRow(int dir) {
         switch (row) {
-            case ROW_CURVE: curveIdx = clamp(curveIdx + dir, 0, CURVE_TOPS.length - 1); break;
+            case ROW_HI: inHi = clamp(inHi + 8 * dir, inLo + 8, 1023); break;
+            case ROW_LO: inLo = clamp(inLo + 8 * dir, 0, inHi - 8); break;
+            case ROW_GAMMA: gammaX100 = clamp(gammaX100 + 5 * dir, 50, 250); break;
             case ROW_TEMP: temp = clamp(temp + 100 * dir, 2500, 9900); break;
             case ROW_AB: shiftAB = clamp(shiftAB + dir, -32, 32); break;
             case ROW_GM: shiftGM = clamp(shiftGM + dir, -32, 32); break;
-            default: matrixIdx = clamp(matrixIdx + dir, 0, MATRIX_SCALES.length - 1); break;
+            default: matrixIdx = clamp(matrixIdx + dir, 0, MATRIX_LABELS.length - 1); break;
         }
         applyRow();
     }
@@ -524,7 +548,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     private void updateStatusLine() {
-        setStatus(LIVE, (positive ? "POSITIVE" : "NEGATIVE") + " | top " + CURVE_TOPS[curveIdx]
+        setStatus(LIVE, curveText()
                 + (wbTouched ? " | " + temp + "K" : "") + (shiftTouched ? " | shift " + rowValueText(ROW_AB) + "/" + rowValueText(ROW_GM) : "")
                 + (matrixTouched ? " | matrix " + rowValueText(ROW_MATRIX) : ""));
     }
@@ -543,9 +567,17 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try {
             final Camera cam = cameraEx.getNormalCamera();
             final boolean pos = positive;
-            out("    " + now() + "  CAPTURE with curve " + (pos ? "POSITIVE" : "NEGATIVE") + " top=" + CURVE_TOPS[curveIdx]);
+            out("    " + now() + "  CAPTURE with curve " + curveText());
             setStatus(LIVE, "Capturing... wait");
             cam.takePicture(null, null, null);
+            // Sony treats takePicture as "shutter pressed" and waits for "shutter released" (cancelTakePicture,
+            // which PMCADemo sends on shutter key-up). Without it the next takePicture fails until live view is
+            // reopened (probe 5).
+            ui.postDelayed(new Runnable() {
+                public void run() {
+                    try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); }
+                }
+            }, 300);
             ui.postDelayed(new Runnable() {
                 public void run() {
                     try {
