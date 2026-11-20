@@ -61,7 +61,7 @@ The ARW is always the negative (sensor data). XMP sidecar makes it open inverted
 | M3 | Mode B Scan | capture, manual controls, roll lock, instant review, frame counter |
 | M4 | Inverted live view | if a lead pans out |
 | M5 | RAW engine + XMP | JNI ARW decode, half-size linear inversion, sidecars |
-| M6 | Release | presets, B&W/slide, docs, testers on other PMCA bodies |
+| M6 | Release | presets, B&W/slide, docs, testers on other PMCA bodies; **edge markings**: decode the DX barcode in the rebate to pick the film-stock preset automatically, and read frame numbers to name/order outputs and flag skipped or repeated frames (OCR of printed text desktop-only; too heavy for the camera). Not for colour calibration: edge-print density varies by maker/batch, the clear rebate stays the reference |
 
 ## Risks
 
