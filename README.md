@@ -3,7 +3,7 @@
 In-camera **color negative inversion** for the **Sony a6500**, built as a PlayMemories Camera App (PMCA),
 installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a desktop reference engine.
 
-> Status: **early (0.12)**: inverted live view and in-camera positives work; calibration features are new
+> Status: **early (0.13)**: inverted live view and in-camera positives work; calibration features are new
 > and still being tested on the camera. Not ready for everyday use.
 > Unofficial, not affiliated with Sony. Installing custom apps is at your own risk.
 
@@ -28,7 +28,7 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 | `docs/` | Plan, checkpoints, API findings |
 | `toolchain*/`, `scans/`, `build/`, `dist/` | Local only (git-ignored) |
 
-## On the camera (0.12)
+## On the camera (0.13)
 
 The app opens straight into **inverted live view**: the camera's own image processor applies an inverted
 tone curve, so live view and captured JPEGs are positives (the RAW stays the untouched negative).
@@ -40,6 +40,12 @@ tone curve, so live view and captured JPEGs are positives (the RAW stays the unt
   *Check alignment* (measures the film edge angle and says which way to rotate), alignment guides,
   2 s capture delay, silent shutter, themes, display flip, *Develop newest frame* (in-camera positive of the
   newest RAW+JPEG negative, auto-cropped), log, reset roll, exit.
+- **Lens controls** (Menu, off by default; for lenses with electronic contacts): adds an *Exposure ›* page of
+  chips for **f/**, **Shutter**, **ISO** and **EV**, a status pill with the current exposure, and autofocus on a
+  shutter half-press. Aperture moves in A/M mode and shutter speed in S/M (the mode dial is physical; the app
+  tells you if a step had no effect). Like the camera's own dials, these settings stay after the app exits.
+  With a fully manual lens leave it off; when the app sees an electronic lens it points you to it.
+  *New in 0.13, not yet tested on the camera.*
 - Calibration and levels are kept per roll in `FILMINV/ROLL.TXT`.
 - **Themes**: 8 built in; make your own in the desktop tool's **Themes** tab (or `filminverter theme ...`),
   which writes the `.JSN` file to `FILMINV/THEMES/` on the card.

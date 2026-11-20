@@ -43,7 +43,7 @@ import java.util.Map;
  *   Chips / UP-DOWN: choose Black, White, Gamma, Temp, A–B, G–M.  Slider / LEFT-RIGHT / dials: change it.
  *   Double-tap the slider: reset.  CENTER: positive <-> negative.  SHUTTER / round button: capture.
  *   MENU / ☰: menu (calibrate base, auto levels, alignment check, guides, delay, silent shutter, theme, flip,
- *   develop newest frame, log, reset roll, exit). In the menu UP/DOWN move, CENTER selects, MENU closes.
+ *   develop newest frame, lens controls, log, reset roll, exit). In the menu UP/DOWN move, CENTER selects, MENU closes.
  *
  * Measurements (calibration, auto levels, alignment) take small JPEG-only captures with a plain curve
  * (3008x2000, quality 25), read them back and adjust the camera: the camera gives apps no live-view frames.
@@ -78,8 +78,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private int delaySec;
 
     private static final int ROW_BLACK = 0, ROW_WHITE = 1, ROW_GAMMA = 2, ROW_TEMP = 3, ROW_AB = 4, ROW_GM = 5;
-    private static final String[] ROW_NAMES = {"Black", "White", "Gamma", "Temp", "A–B", "G–M"};
+    private static final int ROW_EXP = 6;                  // rows 6..9: f/, Shutter, ISO, EV (Lens controls on)
+    private static final String[] ROW_NAMES = {"Black", "White", "Gamma", "Temp", "A–B", "G–M", "f/", "Shutter", "ISO", "EV"};
     private int row = ROW_BLACK;
+    private boolean lensControls;                          // Menu › Lens controls (for electronic lenses)
+    private Exposure exposure;
+    private TextView pageChip, expPill;
+    private boolean lensHintShown;
     private int inLo = 0, inHi = 1023, gammaX100 = 85;     // curve: input [inLo, inHi] -> full output range
     private int temp = 5500, shiftAB = 0, shiftGM = 0;     // WB, applied only when wbActive
     private boolean wbActive;
@@ -110,6 +115,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try { log = new PrintWriter(new FileWriter(new File(card, "FIPROBE.TXT"), true)); } catch (Exception e) { log = null; }
         installCrashLogger();
         super.onCreate(b);
+        exposure = new Exposure(new Exposure.Host() {
+            public void log(String s) { out(s); }
+            public void toast(String s) { showToast(s); }
+            public void changed() { if (row >= ROW_EXP) refreshRow(); else refreshPills(); }
+        }, ui);
         loadPrefs();
         loadRoll();
         List<String> errs = new ArrayList<String>();
@@ -118,7 +128,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         buildUi();
         applyTheme();
         applyWindowFlip();
-        out("=== Film Inverter 0.12, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.13, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -181,6 +191,10 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         top.addView(modePill);
         LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(-2, -2); gap.leftMargin = 8;
         top.addView(framePill, gap);
+        expPill = pill("");
+        expPill.setVisibility(View.GONE);
+        LinearLayout.LayoutParams gap3 = new LinearLayout.LayoutParams(-2, -2); gap3.leftMargin = 8;
+        top.addView(expPill, gap3);
         top.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
         top.addView(basePill);
         LinearLayout.LayoutParams gap2 = new LinearLayout.LayoutParams(-2, -2); gap2.leftMargin = 8;
@@ -223,6 +237,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             chipRow.addView(c, cl);
             chips.add(c);
         }
+        pageChip = new TextView(this);                      // switches color <-> exposure chips (Lens controls on)
+        pageChip.setPadding(11, 6, 11, 6);
+        pageChip.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            selectRow(row >= ROW_EXP ? ROW_BLACK : ROW_EXP); } });
+        chipRow.addView(pageChip, new LinearLayout.LayoutParams(-2, -2));
         mid.addView(chipRow);
         LinearLayout sliderRow = new LinearLayout(this);
         sliderRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -281,7 +300,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private void applyTheme() {
         Theme t = themes.get(themeIdx);
         bar.setBackgroundColor(t.bar);
-        for (TextView p : new TextView[]{modePill, framePill, basePill, wbPill, toast}) {
+        for (TextView p : new TextView[]{modePill, framePill, expPill, basePill, wbPill, toast}) {
             p.setTextColor(t.pillText);
             p.setTextSize(sp(13));
             p.setBackgroundDrawable(shape(t.pill, 0, 14));
@@ -300,14 +319,23 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     private void styleChips() {
         Theme t = themes.get(themeIdx);
+        boolean expPage = row >= ROW_EXP;
         for (int i = 0; i < chips.size(); i++) {
             TextView c = chips.get(i);
             boolean sel = i == row;
+            c.setVisibility((i >= ROW_EXP) == expPage ? View.VISIBLE : View.GONE);
             c.setTextSize(sp(13));
             c.setTextColor(sel ? t.onAccent : t.textDim);
             c.setBackgroundDrawable(sel ? shape(t.accent, 0, Math.min(8, t.radius)) : shape(0, t.chipBorder, Math.min(8, t.radius)));
         }
+        pageChip.setVisibility(lensControls ? View.VISIBLE : View.GONE);
+        pageChip.setText(expPage ? "‹ Color" : "Exposure ›");
+        pageChip.setTextSize(sp(13));
+        pageChip.setTextColor(t.text);
+        pageChip.setBackgroundDrawable(shape(0, t.chipBorder, Math.min(8, t.radius)));
     }
+
+    private int rowCount() { return lensControls ? ROW_NAMES.length : ROW_EXP; }
 
     private void showToast(final String s) {
         out("toast: " + s);
@@ -331,6 +359,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 basePill.setText(wbActive ? "Base set" : "Base: not set");
                 wbPill.setText(wbActive ? temp + " K · " + shiftLabel() : "Camera WB");
                 captureBtn.setBusy(capturing || busy);
+                expPill.setVisibility(lensControls && live ? View.VISIBLE : View.GONE);
+                if (lensControls) expPill.setText(exposure.summary());
             }
         });
     }
@@ -345,11 +375,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     // ------------------------------------------------------------------ rows
     private void selectRow(int r) {
         if (menuOpen) return;
-        row = (r + ROW_NAMES.length) % ROW_NAMES.length;
+        row = (r + rowCount()) % rowCount();
         refreshRow();
     }
 
     private String rowValue() {
+        if (row >= ROW_EXP) return exposure.label(row - ROW_EXP);
         switch (row) {
             case ROW_BLACK: return String.valueOf(inHi);
             case ROW_WHITE: return String.valueOf(inLo);
@@ -361,6 +392,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     private int[] sliderRange() {   // {max, value}
+        if (row >= ROW_EXP) return exposure.range(row - ROW_EXP);
         switch (row) {
             case ROW_BLACK: return new int[]{127, inHi / 8};
             case ROW_WHITE: return new int[]{127, inLo / 8};
@@ -386,6 +418,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     private void setRowFromSlider(int p) {
         if (busy) return;
+        if (row >= ROW_EXP) { exposure.setFromSlider(row - ROW_EXP, p); return; }   // label follows the camera's reply
         switch (row) {
             case ROW_BLACK: inHi = Math.max(inLo + 8, Math.min(1023, p * 8 + 7)); requestCurve(); break;
             case ROW_WHITE: inLo = Math.min(inHi - 8, p * 8); requestCurve(); break;
@@ -399,6 +432,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     private void stepRow(int dir) {
+        if (row >= ROW_EXP) { if (!busy) exposure.step(row - ROW_EXP, dir); return; }
         int[] r = sliderRange();
         int v = Math.max(0, Math.min(r[0], r[1] + dir));
         setRowFromSlider(v);
@@ -407,6 +441,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
 
     private void resetRow() {
         if (busy) return;
+        if (row >= ROW_EXP) { exposure.reset(row - ROW_EXP); return; }
         switch (row) {
             case ROW_BLACK: inHi = 1023; requestCurve(); break;
             case ROW_WHITE: inLo = 0; requestCurve(); break;
@@ -445,6 +480,17 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         addMenu("Capture delay: " + delaySec + " s", new Action() { public void run() { delaySec = delaySec == 0 ? 2 : 0; savePrefs(); } });
         addMenu("Silent shutter: " + (silent ? "on" : "off"), new Action() { public void run() {
             silent = !silent; savePrefs(); setParams("silent-shutter-mode", silent ? "true" : "false"); } });
+        addMenu("Lens controls: " + (lensControls ? "on" : "off (manual lens)"), new Action() { public void run() {
+            lensControls = !lensControls; savePrefs();
+            if (lensControls) {
+                synchronized (MainActivity.this) { if (cameraEx != null) exposure.attach(cameraEx, true); }
+                showToast(exposure.electronicLens() ? "Lens controls for " + exposure.lensName() + ": tap Exposure ›"
+                        : "No electronic lens found: aperture needs a lens with contacts");
+            } else {
+                exposure.detach();
+                if (row >= ROW_EXP) row = ROW_BLACK;
+            }
+            refreshRow(); } });
         addMenu("Theme: " + themes.get(themeIdx).name, new Action() { public void run() {
             themeIdx = (themeIdx + 1) % themes.size(); savePrefs(); applyTheme();
             showToast("Theme " + themes.get(themeIdx).name + " (" + themes.get(themeIdx).source + ")"); } });
@@ -506,7 +552,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             return true;
         }
         if (isShutter(scan)) { onShutterAction(); return true; }
-        if (isHalfPress(scan)) return true;
+        if (isHalfPress(scan)) {                            // autofocus only with Lens controls on (manual lens: nothing to do)
+            if (lensControls && exposure.electronicLens() && cameraEx != null && !busy && !capturing && e.getRepeatCount() == 0) {
+                try { cameraEx.getNormalCamera().autoFocus(null); } catch (Throwable t) { err("autofocus", t); }
+            }
+            return true;
+        }
         if (isUp(scan) || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
             if (menuOpen) { menuSel = (menuSel + menuItems.size() - 1) % menuItems.size(); styleMenu(); } else selectRow(row - 1);
             return true;
@@ -518,6 +569,17 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         if (isNext(scan) || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { if (!menuOpen) stepRow(+1); return true; }
         if (isPrev(scan) || keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { if (!menuOpen) stepRow(-1); return true; }
         return super.onKeyDown(keyCode, e);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent e) {
+        if (isHalfPress(e.getScanCode())) {                 // as PMCADemo: focus is held only while half-pressed
+            if (lensControls && exposure.electronicLens() && cameraEx != null && !capturing) {
+                try { cameraEx.getNormalCamera().cancelAutoFocus(); } catch (Throwable t) { err("cancel autofocus", t); }
+            }
+            return true;
+        }
+        return super.onKeyUp(keyCode, e);
     }
 
     private void exitApp() {
@@ -549,13 +611,15 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             delaySec = p.getInt("delay", 0);
             silent = p.getBoolean("silent", false);
             themeIdx = p.getInt("theme", 0);
+            lensControls = p.getBoolean("lens", false);
         } catch (Throwable ignored) {}
     }
 
     private void savePrefs() {
         try {
             getSharedPreferences("fi", MODE_PRIVATE).edit().putInt("flip2", flipMode).putBoolean("guides", guidesOn)
-                    .putInt("delay", delaySec).putBoolean("silent", silent).putInt("theme", themeIdx).commit();
+                    .putInt("delay", delaySec).putBoolean("silent", silent).putInt("theme", themeIdx)
+                    .putBoolean("lens", lensControls).commit();
         } catch (Throwable ignored) {}
     }
 
@@ -611,7 +675,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             cam.startPreview();
             live = true;
             applyCurve();
-            refreshPills();
+            exposure.attach(cameraEx, lensControls);        // off: only reads the lens info (for the hint below)
+            if (!lensControls && exposure.electronicLens() && !lensHintShown) {
+                lensHintShown = true;
+                showToast("Electronic lens found (" + exposure.lensName() + "): Menu › Lens controls");
+            }
+            refreshRow();
             out("live view started, " + now());
         } catch (Throwable t) {
             err("start live view", t);
@@ -720,6 +789,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 out(s.toString());
             }
         } catch (Throwable t) { err("restore settings", t); }
+        exposure.detach();
         try { cameraEx.setExtendedGammaTable(null); } catch (Throwable t) { err("restore: curve off", t); }
         try { Thread.sleep(150); } catch (InterruptedException ignored) {}
         try { cameraEx.getNormalCamera().stopPreview(); } catch (Throwable t) { err("restore: stopPreview", t); }

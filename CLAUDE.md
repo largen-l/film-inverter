@@ -64,6 +64,11 @@ Done:
   alignment check (`analyze_frame`/`analyzeFrame` now measure film-edge tilt; Py == Java), guides, capture
   delay, silent shutter, roll profile `FILMINV/ROLL.TXT`, develop newest frame with auto-crop. **None of it
   run on the camera yet**; the calibration loop's convergence is the main unknown.
+- **0.13 (2026-11-20)**: app label/icon from resources (camera menu showed the package name); placeholder icon from
+  the UI preview. **Lens controls** (`Exposure.java`, Menu toggle, off by default since the owner uses a manual
+  lens): f/ and shutter via CameraEx increment/decrement + change listeners (direction learned at run time,
+  aperture int assumed f×100), ISO via ParametersModifier, EV via Camera.Parameters, AF on half-press. Lens info
+  is always logged at start. Untested on the camera (owner has no electronic lens on it yet).
 - Ideas from other tools (NLP roll analysis, darktable negadoctor Dmin from border, NegPy auto-crop, FilmLab
   delayed shutter, Nikon D850 negative mode) are reflected above; still open: roll-level analysis across frames,
   B&W mode, XMP crop sidecars for Lightroom, full theme layouts (only palettes so far).

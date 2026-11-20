@@ -4,5 +4,5 @@ One program for Windows, macOS and Linux (Debian/Ubuntu, Fedora, Arch families),
 Run from source with `python tool/run.py <command>` or use the single-file executable built by CI.
 Written by Claude (Anthropic) for the Film Inverter project.
 """
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 REPO = "largen-l/film-inverter"
