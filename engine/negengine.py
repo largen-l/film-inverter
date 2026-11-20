@@ -11,7 +11,8 @@ Pipeline (per frame, sharing one RollProfile across the roll):
     2. normalise each channel by the film base (clear, unexposed film) -> base == 1.0
     3. density  D = -log10(v / base)          (0 at base, grows with exposure)
     4. per-channel black/white points in density, taken from the whole roll
-       (percentiles), which also neutralises the different layer contrasts
+       (percentiles over each frame's *picture area*, see analyse_frame), which also
+       neutralises the different layer contrasts
     5. normalised log-exposure p in [0, 1] -> print curve -> sRGB-ish output
 
 Nothing here ever writes back to the source file.
@@ -60,9 +61,12 @@ def load_linear(path: str | Path, raw_half_size: bool = True) -> np.ndarray:
                 gamma=(1, 1),                 # linear
                 no_auto_bright=True,
                 output_bps=16,
-                use_camera_wb=False,
+                # White balance BEFORE the colour matrix, like the camera's own JPEG. With neutral (1,1,1,1) WB
+                # the camera->sRGB matrix mixes the unbalanced orange mask across channels, which the per-channel
+                # base division cannot undo (probe 2 cat frame: strong blue-violet cast). The base division still
+                # does the actual balancing; camera WB just keeps the matrix in its intended range.
+                use_camera_wb=True,
                 use_auto_wb=False,
-                user_wb=[1.0, 1.0, 1.0, 1.0], # neutral: the film base does the balancing
                 output_color=rawpy.ColorSpace.sRGB,
             )
         return (rgb.astype(np.float32) / 65535.0)
@@ -105,19 +109,130 @@ def sample_rect(lin: np.ndarray, rect: Rect) -> np.ndarray:
     return np.median(patch, axis=0).astype(np.float32)
 
 
-def auto_base(lin: np.ndarray, top_fraction: float = 0.02, clip: float = 0.985) -> np.ndarray:
+LUM = np.array([0.2126, 0.7152, 0.0722], np.float32)
+
+# Frame analysis constants (NegEngine.java uses the same values; keep them in sync).
+FRAME_LINE_FRAC = 0.6     # a row/column is film border when >= 60% of its pixels look like border
+FRAME_MAX_BORDER = 0.25   # never treat more than 25% of a side as border
+FRAME_INSET = 0.015       # step this far inside a detected border (blurry gate edge)
+FRAME_BRIGHT_REL = 0.9    # "bright" = luminance >= 90% of the picture centre's 99th-percentile luminance
+FRAME_DARK = 0.004        # "unlit" = every channel below this (outside the film, no light)
+CLIP = 0.985              # any channel at or above this counts as clipped
+HOLE_RATIO = 1.25         # bright border pixels spanning more than this (p95/p5) contain sprocket holes
+FRAME_LINE_REL = 0.85     # a bright border line's median luminance must be >= 85% of the brightest edge line's
+FRAME_GAP = 0.03          # tolerate up to 3% of the side of non-border lines (edge markings) while peeling
+
+
+@dataclasses.dataclass
+class FrameInfo:
+    rect: Tuple[int, int, int, int]       # picture area x0, y0, x1, y1 in pixels (x1/y1 exclusive)
+    border_found: bool                    # False -> rect is the whole frame
+    base: Optional[np.ndarray]            # film base from the rebate (linear RGB), None if not found
+
+
+def _border_lines(lum: np.ndarray, bright: np.ndarray, dark: np.ndarray) -> Tuple[int, int]:
     """
-    Guess the film base colour: on a negative the base is the *brightest* film area.
-    Sprocket holes / bare light-source are brighter still but usually clipped or
-    near-white, so pixels with any channel >= `clip` are excluded.
-    Prefer an explicit rect (sample_rect) whenever possible.
+    Border extent along axis 0 of the given 2-D arrays (rows; pass transposes for columns).
+    A line is border when >= FRAME_LINE_FRAC of it is bright-or-unlit AND it is either mostly unlit or about
+    as bright as the brightest such line near the edges (its median: sprocket holes are a minority of a rebate
+    line). The second condition stops a dark-scene area along an edge (a thin, bright-ish negative) from being
+    taken for rebate. Peeling from each edge tolerates short runs of other lines (printed edge markings).
     """
+    n = lum.shape[0]
+    zone = max(1, int(n * FRAME_MAX_BORDER))
+    gap = max(2, int(n * FRAME_GAP))
+    frac_any = (bright | dark).mean(axis=1)
+    frac_dark = dark.mean(axis=1)
+    frac_bright = bright.mean(axis=1)
+    med = np.median(lum, axis=1)
+    edge = np.r_[0:zone, n - zone:n]
+    cand = edge[(frac_bright[edge] >= FRAME_LINE_FRAC)]
+    lref = float(med[cand].max()) if cand.size else math.inf
+    is_border = (frac_any >= FRAME_LINE_FRAC) & ((frac_dark >= frac_bright) | (med >= FRAME_LINE_REL * lref))
+
+    def peel(order) -> int:
+        last, miss = -1, 0
+        for k, i in enumerate(order):
+            if is_border[i]:
+                last, miss = k, 0
+            else:
+                miss += 1
+                if miss > gap:
+                    break
+        return last + 1                       # number of border lines from this edge
+
+    a = peel(range(zone))
+    b = n - peel(range(n - 1, n - 1 - zone, -1))
+    return a, b
+
+
+def analyse_frame(lin: np.ndarray) -> FrameInfo:
+    """
+    Find the picture area of a scanned negative and, from the film border around it, the film base.
+
+    The border of a 35 mm scan is clear rebate (= film base), sprocket holes (bare light, brighter than
+    the base) and sometimes unlit space outside the film (black). Those pixels are all either "bright"
+    or "unlit"; picture content mostly is neither. Rows/columns that are mostly border are peeled off
+    from each edge. Levels must come from the picture area only: the unlit edge alone drags the white
+    points to density ~2.5 and turns everything blue (probe 2 cat frame).
+    """
+    h, w, _ = lin.shape
+    lum = lin @ LUM
+    mx = lin.max(axis=2)
+    # Reference brightness from the middle of the frame, which is always picture: clear film base is at least
+    # as bright as the thinnest picture area, sprocket holes are brighter still. (The whole frame's brightest
+    # pixels are the holes, ~3x the base on the probe 2 frame, so they cannot be the reference.)
+    centre = lum[h // 4: h - h // 4, w // 4: w - w // 4]
+    ref = float(np.percentile(centre, 99.0))
+    bright = lum >= FRAME_BRIGHT_REL * ref
+    dark = mx < FRAME_DARK
+
+    y0, y1 = _border_lines(lum, bright, dark)                                        # rows, all columns
+    x0, x1 = _border_lines(lum[y0:y1].T, bright[y0:y1].T, dark[y0:y1].T)             # columns, inside rows
+    y0, y1 = _border_lines(lum[:, x0:x1], bright[:, x0:x1], dark[:, x0:x1])           # rows again
+    found = x0 > 0 or y0 > 0 or x1 < w or y1 < h
+
+    base = None
+    if found:
+        outside = np.ones((h, w), bool)
+        outside[y0:y1, x0:x1] = False
+        cand = outside & bright & (mx < CLIP)
+        if cand.sum() >= 200:
+            px = lin[cand]
+            bl = px @ LUM
+            p5, p95 = np.percentile(bl, [5, 95])
+            if p95 > HOLE_RATIO * p5:                                 # holes present: keep the dimmer group
+                px = px[bl < math.sqrt(p5 * p95)]
+            base = np.median(px, axis=0).astype(np.float32)
+
+    iy, ix = int(round(FRAME_INSET * h)), int(round(FRAME_INSET * w))
+    rect = (x0 + ix if x0 > 0 else 0, y0 + iy if y0 > 0 else 0,
+            x1 - ix if x1 < w else w, y1 - iy if y1 < h else h)
+    if rect[2] - rect[0] < w // 4 or rect[3] - rect[1] < h // 4:      # implausible: use the whole frame
+        rect, found = (0, 0, w, h), False
+    return FrameInfo(rect=rect, border_found=found, base=base)
+
+
+def picture_area(img: np.ndarray, info: FrameInfo) -> np.ndarray:
+    x0, y0, x1, y1 = info.rect
+    return img[y0:y1, x0:x1]
+
+
+def auto_base(lin: np.ndarray, top_fraction: float = 0.02, clip: float = CLIP) -> np.ndarray:
+    """
+    Film base colour. First choice: the rebate found by analyse_frame (sprocket holes excluded).
+    Fallback when no film border is visible: the *brightest* film area, excluding pixels with any
+    channel >= `clip` (bare light). Prefer an explicit rect (sample_rect) whenever possible.
+    """
+    info = analyse_frame(lin)
+    if info.base is not None:
+        return info.base
     px = lin.reshape(-1, 3)
     px = px[::max(1, px.shape[0] // 400_000)]               # subsample for speed
     px = px[(px < clip).all(axis=1)]
     if px.shape[0] == 0:
         raise ValueError("everything is clipped - lower exposure")
-    lum = px @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    lum = px @ LUM
     thr = np.quantile(lum, 1.0 - top_fraction)
     return np.median(px[lum >= thr], axis=0).astype(np.float32)
 
@@ -219,7 +334,7 @@ def invert(lin: np.ndarray, prof: RollProfile) -> np.ndarray:
         d = np.repeat(d.mean(axis=2, keepdims=True), 3, axis=2)
 
     if prof.d_lo is None or prof.d_hi is None:
-        lo, hi = density_levels([d], prof.lo_pct, prof.hi_pct)
+        lo, hi = density_levels([picture_area(d, analyse_frame(lin))], prof.lo_pct, prof.hi_pct)
     else:
         lo, hi = np.asarray(prof.d_lo, np.float32), np.asarray(prof.d_hi, np.float32)
 
@@ -236,5 +351,6 @@ def invert(lin: np.ndarray, prof: RollProfile) -> np.ndarray:
 
 def calibrate_roll(frames_lin: Sequence[np.ndarray], prof: RollProfile) -> RollProfile:
     """Fill in d_lo/d_hi from all frames of a roll (keeps colour consistent across the roll)."""
-    lo, hi = density_levels((to_density(f, prof.base) for f in frames_lin), prof.lo_pct, prof.hi_pct)
+    lo, hi = density_levels((picture_area(to_density(f, prof.base), analyse_frame(f)) for f in frames_lin),
+                            prof.lo_pct, prof.hi_pct)
     return dataclasses.replace(prof, d_lo=lo.tolist(), d_hi=hi.tolist())

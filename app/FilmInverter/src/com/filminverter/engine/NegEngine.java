@@ -72,6 +72,160 @@ public final class NegEngine {
         return b;
     }
 
+    // ------------------------------------------------------------------ frame analysis
+    // Same algorithm and constants as analyse_frame() in negengine.py; keep them in sync.
+    static final double FRAME_LINE_FRAC = 0.6, FRAME_MAX_BORDER = 0.25, FRAME_INSET = 0.015;
+    static final double FRAME_BRIGHT_REL = 0.9, FRAME_DARK = 0.004, CLIP = 0.985, HOLE_RATIO = 1.25;
+    static final double FRAME_LINE_REL = 0.85, FRAME_GAP = 0.03;
+    private static final int LUM_BINS = 4096;
+
+    /** Picture area (x1/y1 exclusive) and the film base found in the border around it (null if none). */
+    public static final class Frame {
+        public int x0, y0, x1, y1;
+        public boolean borderFound;
+        public double[] base;
+        public String toString() {
+            return "[" + x0 + "," + y0 + "," + x1 + "," + y1 + "] border=" + borderFound
+                    + " base=" + (base == null ? "null" : arr(base));
+        }
+    }
+
+    static double lum(int c) {
+        return 0.2126 * LIN[(c >> 16) & 255] + 0.7152 * LIN[(c >> 8) & 255] + 0.0722 * LIN[c & 255];
+    }
+
+    static double maxLin(int c) {
+        return Math.max(LIN[(c >> 16) & 255], Math.max(LIN[(c >> 8) & 255], LIN[c & 255]));
+    }
+
+    private static int lumBin(double l) { return Math.min(LUM_BINS - 1, (int) (l * LUM_BINS)); }
+
+    private static double binValue(int bin) { return (bin + 0.5) / LUM_BINS; }
+
+    private static double pctFromHist(int[] hist, long n, double pct) {
+        long target = Math.max(1, (long) Math.ceil(n * pct / 100.0));
+        long acc = 0;
+        for (int i = 0; i < hist.length; i++) { acc += hist[i]; if (acc >= target) return binValue(i); }
+        return binValue(hist.length - 1);
+    }
+
+    /**
+     * Border extent along rows (rows=true: lines are rows, pixels taken from columns c0..c1) or columns.
+     * Returns {a, b}: lines [0,a) and [b,n) are border. See _border_lines() in negengine.py.
+     */
+    private static int[] borderLines(int[] px, int w, int h, boolean rows, int c0, int c1, double brightThr) {
+        int n = rows ? h : w;
+        int zone = Math.max(1, (int) (n * FRAME_MAX_BORDER));
+        int gap = Math.max(2, (int) (n * FRAME_GAP));
+        double[] fAny = new double[n], fDark = new double[n], fBright = new double[n], med = new double[n];
+        int[] hist = new int[LUM_BINS];
+        for (int line = 0; line < n; line++) {
+            boolean inZone = line < zone || line >= n - zone;
+            java.util.Arrays.fill(hist, 0);
+            int any = 0, dark = 0, bright = 0, cnt = 0;
+            for (int k = c0; k < c1; k++) {
+                int c = rows ? px[line * w + k] : px[k * w + line];
+                double l = lum(c);
+                boolean isBright = l >= brightThr, isDark = maxLin(c) < FRAME_DARK;
+                if (isBright || isDark) any++;
+                if (isDark) dark++;
+                if (isBright) bright++;
+                hist[lumBin(l)]++;
+                cnt++;
+            }
+            if (cnt == 0) continue;
+            fAny[line] = any / (double) cnt;
+            fDark[line] = dark / (double) cnt;
+            fBright[line] = bright / (double) cnt;
+            if (inZone || fAny[line] >= FRAME_LINE_FRAC) med[line] = pctFromHist(hist, cnt, 50.0);
+        }
+        double lref = Double.POSITIVE_INFINITY;
+        boolean haveRef = false;
+        for (int line = 0; line < n; line++) {
+            boolean inZone = line < zone || line >= n - zone;
+            if (inZone && fBright[line] >= FRAME_LINE_FRAC) {
+                lref = haveRef ? Math.max(lref, med[line]) : med[line];
+                haveRef = true;
+            }
+        }
+        boolean[] isBorder = new boolean[n];
+        for (int line = 0; line < n; line++)
+            isBorder[line] = fAny[line] >= FRAME_LINE_FRAC
+                    && (fDark[line] >= fBright[line] || med[line] >= FRAME_LINE_REL * lref);
+        int a = peel(isBorder, zone, gap, true, n);
+        int b = n - peel(isBorder, zone, gap, false, n);
+        return new int[]{a, b};
+    }
+
+    private static int peel(boolean[] isBorder, int zone, int gap, boolean fromStart, int n) {
+        int last = -1, miss = 0;
+        for (int k = 0; k < zone; k++) {
+            int i = fromStart ? k : n - 1 - k;
+            if (isBorder[i]) { last = k; miss = 0; }
+            else if (++miss > gap) break;
+        }
+        return last + 1;
+    }
+
+    /**
+     * Find the picture area of a scanned negative and the film base from the film border around it.
+     * Levels must come from the picture area only (see analyse_frame() in negengine.py for the why).
+     */
+    public static Frame analyseFrame(int[] px, int w, int h) {
+        // reference brightness: 99th percentile luminance of the frame centre (always picture)
+        int[] hist = new int[LUM_BINS];
+        long n = 0;
+        for (int y = h / 4; y < h - h / 4; y++)
+            for (int x = w / 4; x < w - w / 4; x++) { hist[lumBin(lum(px[y * w + x]))]++; n++; }
+        double brightThr = FRAME_BRIGHT_REL * pctFromHist(hist, n, 99.0);
+
+        int[] ry = borderLines(px, w, h, true, 0, w, brightThr);
+        int[] rx = borderLines(px, w, h, false, ry[0], ry[1], brightThr);
+        ry = borderLines(px, w, h, true, rx[0], rx[1], brightThr);
+        int x0 = rx[0], x1 = rx[1], y0 = ry[0], y1 = ry[1];
+        Frame f = new Frame();
+        f.borderFound = x0 > 0 || y0 > 0 || x1 < w || y1 < h;
+
+        if (f.borderFound) {
+            // base: bright, unclipped pixels outside the picture; drop the brighter group (sprocket holes)
+            java.util.Arrays.fill(hist, 0);
+            n = 0;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++) {
+                    if (x >= x0 && x < x1 && y >= y0 && y < y1) continue;
+                    int c = px[y * w + x];
+                    double l = lum(c);
+                    if (l >= brightThr && maxLin(c) < CLIP) { hist[lumBin(l)]++; n++; }
+                }
+            if (n >= 200) {
+                double p5 = pctFromHist(hist, n, 5), p95 = pctFromHist(hist, n, 95);
+                double cut = p95 > HOLE_RATIO * p5 ? Math.sqrt(p5 * p95) : Double.POSITIVE_INFINITY;
+                int[][] ch = new int[3][256];
+                long m = 0;
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++) {
+                        if (x >= x0 && x < x1 && y >= y0 && y < y1) continue;
+                        int c = px[y * w + x];
+                        double l = lum(c);
+                        if (l >= brightThr && maxLin(c) < CLIP && l < cut) {
+                            ch[0][(c >> 16) & 255]++; ch[1][(c >> 8) & 255]++; ch[2][c & 255]++; m++;
+                        }
+                    }
+                if (m > 0) f.base = new double[]{
+                        LIN[percentileCode(ch[0], m, 50.0)], LIN[percentileCode(ch[1], m, 50.0)], LIN[percentileCode(ch[2], m, 50.0)]};
+            }
+        }
+        int iy = (int) Math.round(FRAME_INSET * h), ix = (int) Math.round(FRAME_INSET * w);
+        f.x0 = x0 > 0 ? x0 + ix : 0;
+        f.y0 = y0 > 0 ? y0 + iy : 0;
+        f.x1 = x1 < w ? x1 - ix : w;
+        f.y1 = y1 < h ? y1 - iy : h;
+        if (f.x1 - f.x0 < w / 4 || f.y1 - f.y0 < h / 4) {          // implausible: use the whole frame
+            f.x0 = 0; f.y0 = 0; f.x1 = w; f.y1 = h; f.borderFound = false;
+        }
+        return f;
+    }
+
     // ------------------------------------------------------------------ histograms
     /**
      * Accumulator for roll-level levels. Feed it frames/tiles with {@link #add};
@@ -98,6 +252,12 @@ public final class NegEngine {
                 h[0][r]++; h[1][g]++; h[2][b]++;
                 n++;
             }
+        }
+
+        /** Add the picture area of a frame (see {@link #analyseFrame}), every `step`-th pixel in x and y. */
+        public void addArea(int[] px, int width, Frame f, int step) {
+            if (step < 1) step = 1;
+            for (int y = f.y0; y < f.y1; y += step) add(px, y * width + f.x0, f.x1 - f.x0, step);
         }
     }
 

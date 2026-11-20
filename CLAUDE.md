@@ -37,6 +37,14 @@ Done:
   plain/inverted), tables released, positives to `/FILMINV/`, exit steps logged. Results in
   `docs/api-usage/probe3.md`: **gamma table = 1×1024 u16 LE, 10-bit output; inverted live view works**
   (blue cast: orange mask not yet compensated). Touch works. Exit clean. Long filenames fail (8.3 only?).
+- **Probe 4** (`docs/api-usage/probe4.md`): 8.3 filenames confirmed; yellow speckles were the owner's focus
+  peaking; **captured JPEGs get the curve too (full-res in-camera positives)**; first in-camera positive.
+- **Engine (M1 start, 2026-11-19):** `analyse_frame` / `NegEngine.analyseFrame` find the picture area and the
+  film base from the rebate (sprocket holes excluded); levels come from the picture area only. RAW loads
+  with camera WB before the matrix. Fully automatic results on the cat frame match the owner's Lightroom
+  edit. Java == Python bit-identical on `scans/parity01` (`NegEngineDesktopTest <dir> auto <py out>`).
+  Installed as 0.5-probe.
+- **Next: live view + capture WB/levels** (orange mask via WB or RGB matrix, levels in the curve).
 - **Linux**: `tools/*.sh` twins of the PowerShell scripts (toolchain-linux/, .venv-linux/, PMCA-RE run
   from source). **Not yet run on Linux.** WSL2 can't start on this PC (Proxmox VM without nested
   virtualisation); the owner can provide SSH to a Linux VM/LXC for testing.

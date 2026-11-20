@@ -81,6 +81,48 @@ def test_roll_levels_consistent_across_frames():
     assert grey.max() - grey.min() < 0.04, grey
 
 
+def film_strip(scene):
+    """
+    Picture + what a real 35 mm scan has below it (probe 2 cat frame): clear rebate (film base) with
+    sprocket holes (bare light: brighter than the base and neutral, but not clipped), then an unlit
+    black band outside the film.
+    """
+    neg = make_negative(scene)
+    h, w, _ = neg.shape
+    rebate = make_negative(np.full((18, w, 3), 1e-4, np.float32))
+    for x in range(8, w - 16, 40):                     # holes: 16 px wide every 40 px
+        rebate[4:14, x:x + 16] = 0.93
+    unlit = np.full((6, w, 3), 0.001, np.float32)
+    return np.concatenate([neg, rebate, unlit], 0), rebate[0, 0].copy()
+
+
+def scene_chart_and_ramp():
+    return np.concatenate([colour_chart(), grey_ramp(40, 240)], 0)
+
+
+def test_frame_analysis_finds_picture_and_base():
+    strip, true_base = film_strip(scene_chart_and_ramp())
+    info = ne.analyse_frame(strip)
+    x0, y0, x1, y1 = info.rect
+    assert info.border_found
+    assert y1 <= 80 and y1 >= 70, info.rect          # picture is rows 0..79; border starts at 80
+    assert x0 == 0 and y0 == 0 and x1 == strip.shape[1], info.rect
+    assert info.base is not None and np.allclose(info.base, true_base, rtol=0.05), (info.base, true_base)
+
+
+def test_auto_base_ignores_sprocket_holes():
+    strip, true_base = film_strip(scene_chart_and_ramp())
+    assert np.allclose(ne.auto_base(strip), true_base, rtol=0.05)
+
+
+def test_auto_levels_ignore_film_border():
+    # fully automatic (auto base, per-frame levels): the grey patch must stay grey despite holes + unlit band
+    strip, _ = film_strip(scene_chart_and_ramp())
+    pos = ne.invert(strip, ne.RollProfile(base=ne.auto_base(strip).tolist()))
+    grey = pos[5:35, 5 * 40 + 5: 6 * 40 - 5].reshape(-1, 3).mean(0)
+    assert grey.max() - grey.min() < 0.04, grey
+
+
 def test_profile_roundtrip(tmp_path=None):
     import tempfile
     p = ne.RollProfile(base=[0.5, 0.3, 0.2], d_lo=[0.1, 0.1, 0.1], d_hi=[1, 1, 1], contrast=1.2)

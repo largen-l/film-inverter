@@ -315,10 +315,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         int[] px = new int[w * h];
         bm.getPixels(px, 0, w, 0, 0, w, h);
         bm.recycle();
+        long tf = System.currentTimeMillis();
+        NegEngine.Frame fr = NegEngine.analyseFrame(px, w, h);     // picture area + base from the rebate
+        long tf2 = System.currentTimeMillis();
         NegEngine.Profile p = new NegEngine.Profile();
-        p.base = autoBase(px);
+        p.base = fr.base != null ? fr.base : autoBase(px);
+        out("    frame " + fr + " in " + (tf2 - tf) + " ms" + (fr.base == null ? " (no rebate: fallback base)" : ""));
         NegEngine.Histogram hist = new NegEngine.Histogram(p);
-        hist.add(px, 0, px.length, 4);
+        hist.addArea(px, w, fr, 2);                                 // levels from the picture area only
         NegEngine.levelsFromHistogram(p, hist);
         NegEngine.apply(px, 0, px.length, NegEngine.buildLuts(p), p.film);
         Bitmap outBm = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
@@ -333,6 +337,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 + " (" + dst.length() / 1024 + " KB) in " + (System.currentTimeMillis() - t0) + " ms");
     }
 
+    /** Fallback base when no film border is visible: per-channel 99.5th percentile of unclipped pixels. */
     private static double[] autoBase(int[] px) {
         long[][] h = new long[3][256];
         long n = 0;

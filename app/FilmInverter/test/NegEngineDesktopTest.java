@@ -10,33 +10,62 @@ import java.util.List;
  * Desktop check that the Java LUT engine matches engine/negengine.py.
  *
  *   javac -d build src/com/filminverter/engine/NegEngine.java test/NegEngineDesktopTest.java
+ *   java -cp build NegEngineDesktopTest <roll folder> auto [python positives folder]
  *   java -cp build NegEngineDesktopTest <roll folder> <base x0> <base y0> <base x1> <base y1> [python positives folder]
  *
- * Writes <roll>/positives_java/*_POS.png and, if a Python output folder is given,
+ * "auto" = base and picture area from NegEngine.analyseFrame (as invert_roll.py does by default);
+ * otherwise the base is sampled from the given pixel rectangle on the first frame.
+ * Levels always come from each frame's picture area, as in negengine.calibrate_roll.
+ * Input: *.JPG or *.PNG. Writes <roll>/positives_java/*_POS.png and, if a Python output folder is given,
  * prints the mean absolute difference per frame (0..255 scale) and fails above 3.
  */
 public class NegEngineDesktopTest {
     public static void main(String[] a) throws Exception {
         File roll = new File(a[0]);
-        int bx0 = Integer.parseInt(a[1]), by0 = Integer.parseInt(a[2]);
-        int bx1 = Integer.parseInt(a[3]), by1 = Integer.parseInt(a[4]);
-        File pyOut = a.length > 5 ? new File(a[5]) : null;
+        boolean auto = a[1].equalsIgnoreCase("auto");
+        int argPy = auto ? 2 : 5;
+        File pyOut = a.length > argPy ? new File(a[argPy]) : null;
 
         File[] files = roll.listFiles();
         java.util.Arrays.sort(files);
         List<File> frames = new ArrayList<File>();
-        for (File f : files) if (f.getName().toUpperCase().endsWith(".JPG")) frames.add(f);
+        for (File f : files) {
+            String n = f.getName().toUpperCase();
+            if (n.endsWith(".JPG") || n.endsWith(".PNG")) frames.add(f);
+        }
 
         NegEngine.Profile p = new NegEngine.Profile();
-        BufferedImage first = ImageIO.read(frames.get(0));
-        int[] fp = first.getRGB(0, 0, first.getWidth(), first.getHeight(), null, 0, first.getWidth());
-        p.base = NegEngine.sampleBase(fp, first.getWidth(), bx0, by0, bx1, by1);
-
-        NegEngine.Histogram h = new NegEngine.Histogram(p);
+        List<NegEngine.Frame> info = new ArrayList<NegEngine.Frame>();
+        List<double[]> bases = new ArrayList<double[]>();
         for (File f : frames) {
             BufferedImage im = ImageIO.read(f);
             int[] px = im.getRGB(0, 0, im.getWidth(), im.getHeight(), null, 0, im.getWidth());
-            h.add(px, 0, px.length, 1);
+            NegEngine.Frame fi = NegEngine.analyseFrame(px, im.getWidth(), im.getHeight());
+            System.out.println(f.getName() + " frame " + fi);
+            info.add(fi);
+            if (fi.base != null) bases.add(fi.base);
+        }
+        if (auto) {
+            if (bases.isEmpty()) throw new IllegalStateException("no film border found: pass a base rectangle");
+            p.base = new double[3];
+            for (int ch = 0; ch < 3; ch++) {                       // median over frames, like invert_roll.py
+                double[] v = new double[bases.size()];
+                for (int i = 0; i < v.length; i++) v[i] = bases.get(i)[ch];
+                java.util.Arrays.sort(v);
+                p.base[ch] = v.length % 2 == 1 ? v[v.length / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+            }
+        } else {
+            BufferedImage first = ImageIO.read(frames.get(0));
+            int[] fp = first.getRGB(0, 0, first.getWidth(), first.getHeight(), null, 0, first.getWidth());
+            p.base = NegEngine.sampleBase(fp, first.getWidth(), Integer.parseInt(a[1]), Integer.parseInt(a[2]),
+                    Integer.parseInt(a[3]), Integer.parseInt(a[4]));
+        }
+
+        NegEngine.Histogram h = new NegEngine.Histogram(p);
+        for (int i = 0; i < frames.size(); i++) {
+            BufferedImage im = ImageIO.read(frames.get(i));
+            int[] px = im.getRGB(0, 0, im.getWidth(), im.getHeight(), null, 0, im.getWidth());
+            h.addArea(px, im.getWidth(), info.get(i), 1);
         }
         NegEngine.levelsFromHistogram(p, h);
         int[][] lut = NegEngine.buildLuts(p);

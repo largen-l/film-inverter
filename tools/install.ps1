@@ -27,7 +27,7 @@ Write-Host "Camera: Menu > Setup > USB Connection = Mass Storage, then connect U
 # often takes longer than pmca-console waits ("Operation timed out", exit code 0). One retry finds it.
 for ($try = 1; $try -le 2; $try++) {
     $outLines = & $console.FullName install -f $Apk 2>&1 | ForEach-Object { "$_" } | Tee-Object -Variable captured
-    $outLines | Out-Host
+    $outLines | Write-Output        # stdout, so callers and logs see it (Out-Host bypasses redirection)
     if (-not ($captured -match 'Operation timed out')) { break }
     if ($try -eq 1) { Write-Host "`n(retrying once: the camera was still switching modes)`n"; Start-Sleep -Seconds 5 }
 }
