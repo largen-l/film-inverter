@@ -838,6 +838,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         long t = System.currentTimeMillis();
         if (state == READY || t - lastMenuPress < 3000) {
             out("exit requested, " + now());
+            unflipForExit();
             finish();
         } else {
             lastMenuPress = t;
@@ -879,7 +880,24 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     protected void onPause() {
         out("onPause, " + now());
         restoreCamera();
+        unflipForExit();
         super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        applyWindowFlip();                       // re-apply after onPause put the screen back the right way up
+    }
+
+    /**
+     * The reverse-landscape request outlived the app in 0.10 (Sony menus stayed upside down), so always hand the
+     * screen back in normal landscape: before finish() and whenever we are paused or killed.
+     */
+    private void unflipForExit() {
+        try {
+            setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        } catch (Throwable t) { err("unflip", t); }
     }
 
     @Override
