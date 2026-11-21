@@ -128,7 +128,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.16, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.17, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -1136,7 +1136,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             case ROW_BLACK: inHi = 1023; requestCurve(); break;
             case ROW_WHITE: inLo = 0; requestCurve(); break;
             case ROW_GAMMA: gammaX100 = 85; requestCurve(); break;
-            default: wbActive = false; temp = 5500; shiftAB = 0; shiftGM = 0; restoreWbOnly(); break;
+            // one row only (0.16 reset all three WB rows): Temp back to 5500 K, a shift back to 0. Back to the
+            // camera's own WB only when nothing is left to apply.
+            case ROW_TEMP: temp = 5500; resetWbRow(); break;
+            case ROW_AB: shiftAB = 0; resetWbRow(); break;
+            default: shiftGM = 0; resetWbRow(); break;
         }
         out("reset " + ROW_NAMES[row]);
         refreshRow();
@@ -1259,16 +1263,24 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             }
             return true;
         }
-        if (isUp(scan) || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+        // With Flip on the screen is upside down, so the four-way keys follow what the screen shows: the key at
+        // the top of the camera body (now at the bottom of the picture) moves down. The dials are not flipped.
+        boolean flip = flipMode == 1;
+        boolean up = scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_UP || keyCode == KeyEvent.KEYCODE_DPAD_UP;
+        boolean down = scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_DOWN || keyCode == KeyEvent.KEYCODE_DPAD_DOWN;
+        boolean right = scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
+        boolean left = scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_LEFT;
+        if (flip) { boolean u = up; up = down; down = u; boolean r = right; right = left; left = r; }
+        if (up) {
             if (menuOpen) { menuSel = (menuSel + menuItems.size() - 1) % menuItems.size(); styleMenu(); } else selectRow(row - 1);
             return true;
         }
-        if (isDown(scan) || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+        if (down) {
             if (menuOpen) { menuSel = (menuSel + 1) % menuItems.size(); styleMenu(); } else selectRow(row + 1);
             return true;
         }
-        if (isNext(scan) || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) { if (!menuOpen) stepRow(+1); return true; }
-        if (isPrev(scan) || keyCode == KeyEvent.KEYCODE_DPAD_LEFT) { if (!menuOpen) stepRow(-1); return true; }
+        if (right || isNext(scan)) { if (!menuOpen) stepRow(+1); return true; }
+        if (left || isPrev(scan)) { if (!menuOpen) stepRow(-1); return true; }
         return super.onKeyDown(keyCode, e);
     }
 
@@ -1491,8 +1503,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             }
         } catch (Throwable t) { err("restore settings", t); }
         exposure.detach();
-        try { cameraEx.setShutterListener(null); cameraEx.setCaptureStatusListener(null); cameraEx.setStoreImageCompleteListener(null); }
-        catch (Throwable t) { err("restore: capture listeners", t); }
         try { cameraEx.setExtendedGammaTable(null); } catch (Throwable t) { err("restore: curve off", t); }
         try { Thread.sleep(150); } catch (InterruptedException ignored) {}
         try { cameraEx.getNormalCamera().stopPreview(); } catch (Throwable t) { err("restore: stopPreview", t); }
@@ -1532,11 +1542,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 + (wbActive ? " " + temp + "K " + shiftLabel() : " camWB"));
         new Thread(new Runnable() { public void run() {
             try {
-                ShotResult r = shoot(30000);
+                ShotResult r = shoot(15000);
                 out("JPEG from capture: " + (r.file == null ? "none (RAW only?)" : r.file.getName()));
                 if (pos && r.file != null) rememberSkip(r.file.getName());
                 updateHistogram(r.file);
-                showToast(r.file == null ? (r.shutter ? "Captured (no JPEG found)" : "Capture failed: the shutter did not fire")
+                showToast(r.file == null ? "Captured (no JPEG found: RAW only?)"
                         : "Captured " + r.file.getName());
             } catch (Throwable t) {
                 err("capture", t);
@@ -1559,23 +1569,15 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         return s;
     }
 
-    /** Result of one shot: the JPEG file it wrote (if any is seen) and the JPEG bytes (if asked for). */
-    private static final class ShotResult { File file; volatile boolean shutter; volatile String stored; }
-
-    /** The file Sony's store-complete event names ("dir|file"), if Android can see it: DCIM/<dir>/<file>[.JPG]. */
-    private File storedFile(String stored) {
-        String dir = stored.substring(0, stored.indexOf('|')), name = stored.substring(stored.indexOf('|') + 1);
-        File[] cands = { new File(new File(card, "DCIM"), dir + "/" + name), new File(new File(card, "DCIM"), dir + "/" + name + ".JPG"),
-                new File(card, dir + "/" + name), new File(card, dir + "/" + name + ".JPG") };
-        for (File f : cands) if (f.isFile() && f.getName().toUpperCase().endsWith(".JPG")) return f;
-        return null;
-    }
+    /** Result of one shot: the JPEG file it wrote, if one appeared. */
+    private static final class ShotResult { File file; }
 
     /**
-     * One capture, run from a worker thread. Camera calls go to the UI thread (the thread that opened the camera),
-     * the shutter is "released" 300 ms later (Sony waits for that, see probe5-8.md), then this waits for the JPEG
-     * callback and for a new file to appear under DCIM and stop growing. Matching by file name, not time: the app
-     * clock is wrong. Preview restarts only once the camera is done, so the next shot is not started mid-save.
+     * One capture, run from a worker thread, in the exact sequence of probe 0.10 (the last version that saved every
+     * shot): takePicture on the UI thread, the shutter "released" 300 ms later (Sony waits for that, probe5-8.md),
+     * live view restarted at 3 s, and only then the new file looked for (by name, in every DCIM folder; the app
+     * clock is wrong). 0.12–0.16 waited for the file *before* restarting live view: the camera then never wrote
+     * it in time and saved nothing after the first shot of a session.
      */
     private ShotResult shoot(long timeoutMs) throws Exception {
         if (cameraEx == null) throw new IllegalStateException("live view not running");
@@ -1583,72 +1585,40 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         final ShotResult r = new ShotResult();
         final long t0 = System.currentTimeMillis();
         final Throwable[] fail = new Throwable[1];
-        final boolean[] released = new boolean[1];
-        final Runnable release = new Runnable() { public void run() {
-            if (released[0]) return;
-            released[0] = true;
-            out("  shutter released +" + (System.currentTimeMillis() - t0) + " ms");
-            try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); } } };
         ui.post(new Runnable() { public void run() {
             try {
                 if (cameraEx == null) throw new IllegalStateException("closed");
-                // Sony's own capture events, logged with times (0.14: the release at 300 ms could come before the
-                // shutter fired, and those shots were never saved). The release now waits for the shutter event.
-                try {
-                    cameraEx.setShutterListener(new CameraEx.ShutterListener() { public void onShutter(int status, CameraEx c) {
-                        r.shutter = true;
-                        out("  shutter " + status + " +" + (System.currentTimeMillis() - t0) + " ms");
-                        ui.removeCallbacks(release);
-                        ui.postDelayed(release, 500);
-                    } });
-                    cameraEx.setCaptureStatusListener(new CameraEx.OnCaptureStatusListener() {
-                        public void onStart(int a, CameraEx c) { out("  capture start " + a + " +" + (System.currentTimeMillis() - t0) + " ms"); }
-                        public void onEnd(int a, int b, CameraEx c) { out("  capture end " + a + "/" + b + " +" + (System.currentTimeMillis() - t0) + " ms"); }
-                    });
-                    cameraEx.setStoreImageCompleteListener(new CameraEx.StoreImageCompleteListener() {
-                        public void onDone(int status, CameraEx.StoreImageInfo i, CameraEx c) {
-                            out("  stored " + status + " +" + (System.currentTimeMillis() - t0) + " ms: "
-                                    + (i == null ? "no info" : i.DirectoryName + " / " + i.FileName + " (dir " + i.DirectoryNo + ", file " + i.FileNo + ")"));
-                            if (i != null && i.DirectoryName != null && i.FileName != null) synchronized (r) { r.stored = i.DirectoryName + "|" + i.FileName; }
-                        } });
-                } catch (Throwable t) { err("capture listeners", t); }
                 cameraEx.getNormalCamera().takePicture(null, null, null);
-                out("  takePicture sent +" + (System.currentTimeMillis() - t0) + " ms");
-            } catch (Throwable t) { fail[0] = t; }
+                out("  takePicture +" + (System.currentTimeMillis() - t0) + " ms");
+            } catch (Throwable t) { fail[0] = t; err("takePicture", t); }
         } });
-        ui.postDelayed(release, 2500);                            // no shutter event: release as a slow finger would
-        try {
-            long end = t0 + timeoutMs;
-            while (System.currentTimeMillis() < end && r.file == null) {
-                Thread.sleep(400);
-                if (fail[0] != null) throw new IllegalStateException("takePicture: " + fail[0].getMessage());
-                for (String path : dcimJpegs()) if (!before.contains(path)) { r.file = new File(path); break; }
-                if (r.file == null && r.stored != null) r.file = storedFile(r.stored);
-            }
-            if (r.file != null) {
-                long len = -1;
-                for (int i = 0; i < 20 && r.file.length() != len; i++) { len = r.file.length(); Thread.sleep(300); }
-                out("  file " + r.file.getParentFile().getName() + "/" + r.file.getName() + " +"
-                        + (System.currentTimeMillis() - t0) + " ms, " + len + " bytes");
-            } else {
-                File[] dirs = new File(card, "DCIM").listFiles();
-                out("  no new JPEG after " + timeoutMs + " ms (shutter " + r.shutter + ", stored " + r.stored
-                        + ", DCIM folders " + (dirs == null ? "?" : String.valueOf(dirs.length)) + ")");
-            }
-            Thread.sleep(300);
-        } finally {
-            ui.post(release);
-            final Object done = new Object();
-            final boolean[] ok = new boolean[1];
-            ui.post(new Runnable() { public void run() {
-                try { if (cameraEx != null) cameraEx.getNormalCamera().startPreview(); } catch (Throwable t) { err("restart preview", t); }
-                synchronized (done) { ok[0] = true; done.notifyAll(); }
-            } });
-            synchronized (done) { if (!ok[0]) done.wait(3000); }
+        ui.postDelayed(new Runnable() { public void run() {
+            try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); }
+            out("  shutter released +" + (System.currentTimeMillis() - t0) + " ms");
+        } }, 300);
+        ui.postDelayed(new Runnable() { public void run() {
+            try { if (cameraEx != null) cameraEx.getNormalCamera().startPreview(); } catch (Throwable t) { err("restart preview", t); }
+            out("  live view restarted +" + (System.currentTimeMillis() - t0) + " ms");
+        } }, 3000);
+        Thread.sleep(500);
+        if (fail[0] != null) throw new IllegalStateException("takePicture: " + fail[0].getMessage());
+        long end = t0 + timeoutMs;
+        while (System.currentTimeMillis() < end && r.file == null) {
+            Thread.sleep(400);
+            for (String path : dcimJpegs()) if (!before.contains(path)) { r.file = new File(path); break; }
         }
+        if (r.file != null) {
+            long len = -1;
+            for (int i = 0; i < 20 && r.file.length() != len; i++) { len = r.file.length(); Thread.sleep(300); }
+            out("  file " + r.file.getParentFile().getName() + "/" + r.file.getName() + " +"
+                    + (System.currentTimeMillis() - t0) + " ms, " + len + " bytes");
+        } else {
+            out("  no new JPEG after " + timeoutMs + " ms");
+        }
+        long wait = t0 + 3300 - System.currentTimeMillis();            // never hand back before live view is back
+        if (wait > 0) Thread.sleep(wait);
         return r;
     }
-
     /** JPEGs that are not plain negatives (positive captures, measurement shots): the engine skips them. */
     private void rememberSkip(String name) {
         try {
@@ -1692,9 +1662,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             measureCurve = true;
             applyCurve();
             Thread.sleep(400);                                    // let the curve and settings reach the sensor path
-            ShotResult r = shoot(30000);
+            ShotResult r = shoot(15000);
             File jpg = r.file;
-            if (jpg == null) throw new IllegalStateException(r.shutter ? "no measurement JPEG appeared" : "the shutter did not fire");
+            if (jpg == null) throw new IllegalStateException("no measurement JPEG appeared");
             rememberSkip(jpg.getName());
             BitmapFactory.Options o = new BitmapFactory.Options();
             o.inJustDecodeBounds = true;
@@ -1750,6 +1720,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         System.arraycopy(m, 0, codesOut, 0, 3);
         double r = lin(Math.max(1, m[0])), g = lin(Math.max(1, m[1])), b = lin(Math.max(1, m[2]));
         return new double[]{Math.log(r / g), Math.log(b / g)};
+    }
+
+    private void resetWbRow() {
+        if (temp == 5500 && shiftAB == 0 && shiftGM == 0) { wbActive = false; restoreWbOnly(); }
+        else if (wbActive) applyWb();
     }
 
     private void setWbMired(double mired, int gm) {

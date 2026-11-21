@@ -83,6 +83,20 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
   holds it); `StoreImageCompleteListener` and `OnCaptureStatusListener` logged, and the stored file name used
   when Android's listing doesn't show it; log lines carry seconds since start; scroll views never take focus.
 
+## 0.15/0.16 session → 0.17: the cause
+
+- Measurement shot (JPEG only): takePicture +12 ms, Sony `capture start` and `shutter` at +128 ms, released at
+  +637 ms; `LTL00003.JPG` is on the card, but Android never saw it in 30 s and `StoreImageCompleteListener` never
+  fired. Every later capture (RAW+JPEG): no shutter until the 2.5 s release, then `capture start`/`shutter`/
+  `capture end` within 3 ms, and **no file at all**.
+- What changed since probe 0.10 (the last version that saved every shot): 0.10 restarted live view at a fixed
+  3 s after takePicture and looked for the file independently. **0.12–0.16 waited for the file before
+  restarting live view.** The camera apparently completes the save only once live view is back, so the app waited
+  for a file that never came, and the camera saved nothing after the first shot of the session.
+- 0.17: `shoot()` is 0.10's sequence again (takePicture, release at 300 ms, startPreview at 3 s, then look for the
+  file by name for up to 15 s); the Sony capture listeners are gone (not used by 0.10). Measurement still switches
+  `storage-fmt` to `jpeg` around its shot: the remaining unknown if 0.17 still fails.
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and
