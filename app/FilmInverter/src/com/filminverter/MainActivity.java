@@ -130,7 +130,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.24, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.25, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -2115,6 +2115,37 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         showReviewItem();
     }
 
+    /**
+     * The camera's own preview inside its JPEG (MPF, 1616x1080 on the a6500, in the last ~300 KB; same colors as the
+     * picture, curve included), decoded at half size. Decoding the full 24 MP JPEG instead took several seconds.
+     * Null if the file has none (e.g. developed frames, which are small anyway).
+     */
+    private static Bitmap embeddedPreview(File f) throws Exception {
+        long len = f.length();
+        int n = (int) Math.min(len, 1536 * 1024);
+        byte[] b = new byte[n];
+        java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "r");
+        try {
+            raf.seek(len - n);
+            raf.readFully(b);
+        } finally { raf.close(); }
+        for (int i = n - 4; i > 0; i--) {                          // last JPEG start in the tail that is big enough
+            if ((b[i] & 255) != 0xff || (b[i + 1] & 255) != 0xd8 || (b[i + 2] & 255) != 0xff) continue;
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(b, i, n - i, o);
+            if (o.outWidth < 640 || o.outWidth > 4000) continue;
+            int ss = 1;
+            while (o.outWidth / (ss * 2) >= 640) ss *= 2;
+            o.inJustDecodeBounds = false;
+            o.inSampleSize = ss;
+            o.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap bm = BitmapFactory.decodeByteArray(b, i, n - i, o);
+            if (bm != null) return bm;
+        }
+        return null;
+    }
+
     /** Decodes the current picture at about screen size on a worker thread (the newest request wins). */
     private void showReviewItem() {
         final File f = reviewFiles.get(reviewIdx);
@@ -2123,7 +2154,10 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         reviewCaption.setText((reviewIdx + 1) + " / " + reviewFiles.size() + "   " + where + "   loading…");
         new Thread(new Runnable() { public void run() {
             Bitmap bm = null;
-            try {
+            long t0 = System.currentTimeMillis();
+            try { bm = embeddedPreview(f); } catch (Throwable t) { err("review preview " + where, t); }
+            if (bm != null) out("review: " + where + " preview " + bm.getWidth() + "x" + bm.getHeight() + " in " + (System.currentTimeMillis() - t0) + " ms");
+            if (bm == null) try {
                 BitmapFactory.Options o = new BitmapFactory.Options();
                 o.inJustDecodeBounds = true;
                 BitmapFactory.decodeFile(f.getAbsolutePath(), o);
