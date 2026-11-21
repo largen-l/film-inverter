@@ -42,11 +42,11 @@ import java.util.Map;
  * Opens straight into inverted live view (hardware tone curve, see docs/api-usage/probe3.md).
  *   Chips / UP-DOWN: choose Black, White, Gamma, Temp, A–B, G–M.  Slider / LEFT-RIGHT / dials: change it.
  *   Double-tap the slider: reset.  CENTER: positive <-> negative.  SHUTTER / round button: capture.
- *   MENU / ☰: menu (calibrate base, auto levels, alignment check, review captures, guides, delay, silent shutter,
+ *   MENU / ☰: menu (calibrate base, film stock, alignment check, review captures, guides, delay, silent shutter,
  *   theme, flip, develop newest frame, lens controls, log, reset roll, exit). In the menu UP/DOWN move, CENTER
  *   selects, MENU closes. PLAYBACK (if the camera passes it on) or Menu › Review captures: browse the positives.
  *
- * Measurements (calibration, auto levels, alignment) take small JPEG-only captures with a plain curve (smallest
+ * Measurements (calibration, alignment) take small JPEG-only captures with a plain curve (smallest
  * 3:2 size), read them back and adjust the camera: the camera gives apps no live-view frames. They are listed in
  * FILMINV/MEASURE.TXT. Every shot closes and reopens the camera (one saved shot per live-view session, 0.20).
  * Every camera setting touched is saved first and restored (and read back) when the app pauses or exits.
@@ -130,7 +130,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.23, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.24, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -1276,7 +1276,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         menuItems.clear();
         menuActions.clear();
         addMenu("Calibrate film base", new Action() { public void run() { runAsync(new Runnable() { public void run() { calibrateBase(); } }); } });
-        addMenu("Auto levels (this frame)", new Action() { public void run() { runAsync(new Runnable() { public void run() { autoLevels(); } }); } });
         addMenu("Check alignment", new Action() { public void run() { runAsync(new Runnable() { public void run() { checkAlignment(); } }); } });
         addMenu("Review captures", new Action() { public void run() {
             if (capturing || busy) showToast("Busy, try again in a moment"); else openReview(); } });
@@ -2038,60 +2037,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         } catch (Throwable t) {
             err("calibrate", t);
             showToast("Calibration failed: " + t.getMessage());
-        }
-    }
-
-    /**
-     * Black/white points from the current frame's picture area (film border excluded via analyzeFrame):
-     * thinnest 0.5% of the negative -> black, densest 0.5% -> white. Plain-curve shot, so the codes are in
-     * the curve's input domain (x 1023/255).
-     */
-    private void autoLevels() {
-        showToast("Measuring levels…");
-        try {
-            Shot s = measureShot();
-            NegEngine.Frame fr = NegEngine.analyzeFrame(s.px, s.w, s.h);
-            // A "border" only counts if it is the film base: with a calibrated base, its color must match. In 0.21 a
-            // light sky along the top edge was taken for the border, left out, and then clipped to black.
-            boolean border = fr.borderFound && fr.base != null;
-            String why = "";
-            if (border && baseCodes[1] > 0) {
-                for (int ch = 0; ch < 3; ch++) {
-                    double want = lin(baseCodes[ch]);
-                    if (Math.abs(fr.base[ch] / want - 1) > 0.2) border = false;
-                }
-                if (!border) why = " (edge found, not the film base: ignored)";
-            }
-            int x0 = fr.x0, y0 = fr.y0, x1 = fr.x1, y1 = fr.y1;
-            if (!border) { x0 = s.w * 3 / 100; y0 = s.h * 3 / 100; x1 = s.w - x0; y1 = s.h - y0; }
-            int[] hist = new int[256];
-            int n = 0;
-            for (int y = y0; y < y1; y += 2) for (int x = x0; x < x1; x += 2) {
-                int c = s.px[y * s.w + x];
-                int l = (((c >> 16) & 255) * 2126 + ((c >> 8) & 255) * 7152 + (c & 255) * 722) / 10000;
-                hist[l]++; n++;
-            }
-            // densest 0.2% of the negative -> white, thinnest 0.2% -> black, but black never above the film base
-            int lo = 0, hi = 255, acc = 0;
-            for (int i = 0; i < 256; i++) { acc += hist[i]; if (acc >= n * 0.002) { lo = i; break; } }
-            acc = 0;
-            for (int i = 255; i >= 0; i--) { acc += hist[i]; if (acc >= n * 0.002) { hi = i; break; } }
-            int black = Math.round(hi * 1023f / 255f) + 4;
-            if (baseCodes[1] > 0) {
-                int baseIn = Math.round(Math.max(baseCodes[0], Math.max(baseCodes[1], baseCodes[2])) * 1023f / 255f);
-                black = Math.min(black, baseIn - 8);
-            }
-            inLo = Math.max(0, Math.round(lo * 1023f / 255f) - 4);
-            inHi = Math.min(1023, Math.max(inLo + 64, black));
-            requestCurve();
-            saveRoll();
-            refreshRow();
-            out("auto levels: frame " + fr + (border ? "" : " -> whole picture" + why) + ", codes " + lo + ".." + hi
-                    + " -> in " + inLo + ".." + inHi);
-            showToast("Levels set: " + inLo + "–" + inHi + (border ? " (border excluded)" : why));
-        } catch (Throwable t) {
-            err("auto levels", t);
-            showToast("Auto levels failed: " + t.getMessage());
         }
     }
 

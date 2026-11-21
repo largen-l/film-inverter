@@ -153,6 +153,8 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
 - 0.22: the calibrated base codes are kept in ROLL.TXT; a found border counts only if its color is within 20 % of them
   (else the whole picture minus 3 % is used); 0.2 % percentiles instead of 0.5 %; black never above the base.
   On the same shot: 297..582 instead of 301..534.
+- 0.24: owner: calibrating the base "does well enough", so Auto levels is removed (calibration sets Black = base;
+  White and Gamma stay manual).
 - Still open: the positives have a cyan-green cast. One tone curve serves all three channels and white balance is a
   pre-curve gain, so per-channel contrast (what a lab or the desktop engine does per channel) can't be matched in
   camera; the base is neutral but the mid-tones are not.
