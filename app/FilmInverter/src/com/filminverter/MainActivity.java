@@ -129,7 +129,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         buildUi();
         applyTheme();
         applyWindowFlip();
-        out("=== Film Inverter 0.14, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.15, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -272,6 +272,10 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         // in a ScrollView: the menu is taller than the space above the bar; styleMenu keeps the cursor in view
         menuScroll = new ScrollView(this);
         menuScroll.setVerticalScrollBarEnabled(true);
+        // never take key focus: a focused ScrollView eats the d-pad (it scrolled instead of moving the cursor, 0.14)
+        menuScroll.setFocusable(false);
+        menuScroll.setFocusableInTouchMode(false);
+        menuScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         menuScroll.addView(menuPanel, new FrameLayout.LayoutParams(-1, -2));
         menuScroll.setVisibility(View.GONE);
         FrameLayout.LayoutParams ml = new FrameLayout.LayoutParams(300, -2, Gravity.BOTTOM | Gravity.LEFT);
@@ -279,6 +283,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         root.addView(menuScroll, ml);
 
         logScroll = new ScrollView(this);
+        logScroll.setFocusable(false);
+        logScroll.setFocusableInTouchMode(false);
+        logScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         logText = new TextView(this);
         logText.setTextSize(11);
         logText.setTextColor(Color.WHITE);
@@ -806,6 +813,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             }
         } catch (Throwable t) { err("restore settings", t); }
         exposure.detach();
+        try { cameraEx.setShutterListener(null); cameraEx.setCaptureStatusListener(null); cameraEx.setStoreImageCompleteListener(null); }
+        catch (Throwable t) { err("restore: capture listeners", t); }
         try { cameraEx.setExtendedGammaTable(null); } catch (Throwable t) { err("restore: curve off", t); }
         try { Thread.sleep(150); } catch (InterruptedException ignored) {}
         try { cameraEx.getNormalCamera().stopPreview(); } catch (Throwable t) { err("restore: stopPreview", t); }
@@ -845,7 +854,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 + (wbActive ? " " + temp + "K " + shiftLabel() : " camWB"));
         new Thread(new Runnable() { public void run() {
             try {
-                ShotResult r = shoot(false, 30000);
+                ShotResult r = shoot(30000);
                 out("JPEG from capture: " + (r.file == null ? "none (RAW only?)" : r.file.getName()));
                 if (pos && r.file != null) rememberSkip(r.file.getName());
                 showToast(r.file == null ? (r.shutter ? "Captured (no JPEG found)" : "Capture failed: the shutter did not fire")
@@ -872,7 +881,16 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     /** Result of one shot: the JPEG file it wrote (if any is seen) and the JPEG bytes (if asked for). */
-    private static final class ShotResult { File file; byte[] data; boolean shutter, callback; }
+    private static final class ShotResult { File file; volatile boolean shutter; volatile String stored; }
+
+    /** The file Sony's store-complete event names ("dir|file"), if Android can see it: DCIM/<dir>/<file>[.JPG]. */
+    private File storedFile(String stored) {
+        String dir = stored.substring(0, stored.indexOf('|')), name = stored.substring(stored.indexOf('|') + 1);
+        File[] cands = { new File(new File(card, "DCIM"), dir + "/" + name), new File(new File(card, "DCIM"), dir + "/" + name + ".JPG"),
+                new File(card, dir + "/" + name), new File(card, dir + "/" + name + ".JPG") };
+        for (File f : cands) if (f.isFile() && f.getName().toUpperCase().endsWith(".JPG")) return f;
+        return null;
+    }
 
     /**
      * One capture, run from a worker thread. Camera calls go to the UI thread (the thread that opened the camera),
@@ -880,34 +898,53 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
      * callback and for a new file to appear under DCIM and stop growing. Matching by file name, not time: the app
      * clock is wrong. Preview restarts only once the camera is done, so the next shot is not started mid-save.
      */
-    private ShotResult shoot(final boolean wantData, long timeoutMs) throws Exception {
+    private ShotResult shoot(long timeoutMs) throws Exception {
         if (cameraEx == null) throw new IllegalStateException("live view not running");
         final java.util.Set<String> before = dcimJpegs();
         final ShotResult r = new ShotResult();
         final long t0 = System.currentTimeMillis();
         final Throwable[] fail = new Throwable[1];
+        final boolean[] released = new boolean[1];
+        final Runnable release = new Runnable() { public void run() {
+            if (released[0]) return;
+            released[0] = true;
+            out("  shutter released +" + (System.currentTimeMillis() - t0) + " ms");
+            try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); } } };
         ui.post(new Runnable() { public void run() {
             try {
                 if (cameraEx == null) throw new IllegalStateException("closed");
-                Camera.ShutterCallback sc = new Camera.ShutterCallback() { public void onShutter() {
-                    r.shutter = true; out("  shutter +" + (System.currentTimeMillis() - t0) + " ms"); } };
-                Camera.PictureCallback jc = !wantData ? null : new Camera.PictureCallback() {
-                    public void onPictureTaken(byte[] data, Camera c) {
-                        out("  JPEG callback +" + (System.currentTimeMillis() - t0) + " ms, "
-                                + (data == null ? "no data" : data.length + " bytes"));
-                        synchronized (r) { r.data = data; r.callback = true; }
-                    } };
-                cameraEx.getNormalCamera().takePicture(sc, null, jc);
+                // Sony's own capture events, logged with times (0.14: the release at 300 ms could come before the
+                // shutter fired, and those shots were never saved). The release now waits for the shutter event.
+                try {
+                    cameraEx.setShutterListener(new CameraEx.ShutterListener() { public void onShutter(int status, CameraEx c) {
+                        r.shutter = true;
+                        out("  shutter " + status + " +" + (System.currentTimeMillis() - t0) + " ms");
+                        ui.removeCallbacks(release);
+                        ui.postDelayed(release, 500);
+                    } });
+                    cameraEx.setCaptureStatusListener(new CameraEx.OnCaptureStatusListener() {
+                        public void onStart(int a, CameraEx c) { out("  capture start " + a + " +" + (System.currentTimeMillis() - t0) + " ms"); }
+                        public void onEnd(int a, int b, CameraEx c) { out("  capture end " + a + "/" + b + " +" + (System.currentTimeMillis() - t0) + " ms"); }
+                    });
+                    cameraEx.setStoreImageCompleteListener(new CameraEx.StoreImageCompleteListener() {
+                        public void onDone(int status, CameraEx.StoreImageInfo i, CameraEx c) {
+                            out("  stored " + status + " +" + (System.currentTimeMillis() - t0) + " ms: "
+                                    + (i == null ? "no info" : i.DirectoryName + " / " + i.FileName + " (dir " + i.DirectoryNo + ", file " + i.FileNo + ")"));
+                            if (i != null && i.DirectoryName != null && i.FileName != null) synchronized (r) { r.stored = i.DirectoryName + "|" + i.FileName; }
+                        } });
+                } catch (Throwable t) { err("capture listeners", t); }
+                cameraEx.getNormalCamera().takePicture(null, null, null);
+                out("  takePicture sent +" + (System.currentTimeMillis() - t0) + " ms");
             } catch (Throwable t) { fail[0] = t; }
         } });
-        ui.postDelayed(new Runnable() { public void run() {
-            try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); } } }, 300);
+        ui.postDelayed(release, 2500);                            // no shutter event: release as a slow finger would
         try {
             long end = t0 + timeoutMs;
             while (System.currentTimeMillis() < end && r.file == null) {
                 Thread.sleep(400);
                 if (fail[0] != null) throw new IllegalStateException("takePicture: " + fail[0].getMessage());
                 for (String path : dcimJpegs()) if (!before.contains(path)) { r.file = new File(path); break; }
+                if (r.file == null && r.stored != null) r.file = storedFile(r.stored);
             }
             if (r.file != null) {
                 long len = -1;
@@ -916,12 +953,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                         + (System.currentTimeMillis() - t0) + " ms, " + len + " bytes");
             } else {
                 File[] dirs = new File(card, "DCIM").listFiles();
-                out("  no new JPEG after " + timeoutMs + " ms (shutter " + r.shutter + ", callback " + r.callback
+                out("  no new JPEG after " + timeoutMs + " ms (shutter " + r.shutter + ", stored " + r.stored
                         + ", DCIM folders " + (dirs == null ? "?" : String.valueOf(dirs.length)) + ")");
             }
-            if (wantData) { long e2 = System.currentTimeMillis() + 3000; while (!r.callback && System.currentTimeMillis() < e2) Thread.sleep(100); }
             Thread.sleep(300);
         } finally {
+            ui.post(release);
             final Object done = new Object();
             final boolean[] ok = new boolean[1];
             ui.post(new Runnable() { public void run() {
@@ -959,36 +996,35 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private static final class Shot { int[] px; int w, h; }
 
     /**
-     * Small JPEG-only capture with the plain (identity) curve, decoded at 1/4 (~750x500). Runs on a worker
+     * JPEG-only capture with the plain (identity) curve, decoded at ~750 px wide. Runs on a worker
      * thread. Camera settings for the shot are set and put back; the file is listed in CAPTURED.TXT.
      */
     private Shot measureShot() throws Exception {
         if (cameraEx == null) throw new IllegalStateException("live view not running");
         Camera cam = cameraEx.getNormalCamera();
         Camera.Parameters p0 = cam.getParameters();
-        String fmt = p0.get("storage-fmt"), size = p0.get("picture-size"), q = p0.get("jpeg-quality");
+        String fmt = p0.get("storage-fmt");
         capturing = true;
         refreshPills();
         try {
-            setParams("storage-fmt", "jpeg", "picture-size", "3008x2000", "jpeg-quality", "25");
+            // JPEG only, at the camera's own size and quality: 0.13/0.14 also changed picture-size and jpeg-quality
+            // in live view, and after that first shot the camera saved nothing more (probe5-8.md)
+            setParams("storage-fmt", "jpeg");
             measureCurve = true;
             applyCurve();
             Thread.sleep(400);                                    // let the curve and settings reach the sensor path
-            ShotResult r = shoot(true, 30000);
+            ShotResult r = shoot(30000);
             File jpg = r.file;
-            if (jpg == null && r.data == null)
-                throw new IllegalStateException(r.shutter ? "no measurement JPEG appeared" : "the shutter did not fire");
-            if (jpg != null) rememberSkip(jpg.getName());
+            if (jpg == null) throw new IllegalStateException(r.shutter ? "no measurement JPEG appeared" : "the shutter did not fire");
+            rememberSkip(jpg.getName());
             BitmapFactory.Options o = new BitmapFactory.Options();
-            o.inSampleSize = 4;
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
+            o.inJustDecodeBounds = false;
+            o.inSampleSize = Math.max(1, o.outWidth / 750);        // ~750 px wide whatever the picture size
             o.inPreferredConfig = Bitmap.Config.ARGB_8888;
-            byte[] data = r.data;
-            r.data = null;
-            Bitmap bm = data != null ? BitmapFactory.decodeByteArray(data, 0, data.length, o)
-                    : BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
-            data = null;
-            if (bm == null) throw new IllegalStateException("could not decode the measurement JPEG");
-            if (jpg == null) jpg = new File("(callback data)");
+            Bitmap bm = BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
+            if (bm == null) throw new IllegalStateException("could not decode " + jpg.getName());
             Shot s = new Shot();
             s.w = bm.getWidth(); s.h = bm.getHeight();
             s.px = new int[s.w * s.h];
@@ -1001,8 +1037,6 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             applyCurve();
             List<String> kv = new ArrayList<String>();
             if (fmt != null) { kv.add("storage-fmt"); kv.add(fmt); }
-            if (size != null) { kv.add("picture-size"); kv.add(size); }
-            if (q != null) { kv.add("jpeg-quality"); kv.add(q); }
             setParams(kv.toArray(new String[kv.size()]));
             capturing = false;
             refreshPills();
@@ -1225,8 +1259,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     // ================================================================== logging
+    private final long logT0 = System.currentTimeMillis();
+
     private void out(final String s) {
-        if (log != null) { log.println(s); log.flush(); }
+        if (log != null) {                                     // seconds since start: the app clock itself is wrong
+            long ms = System.currentTimeMillis() - logT0;
+            log.println(String.format(java.util.Locale.US, "[%6.1f] ", ms / 1000.0) + s);
+            log.flush();
+        }
         ui.post(new Runnable() { public void run() {
             if (logText == null) return;
             logText.append(s + "\n");

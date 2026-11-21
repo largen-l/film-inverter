@@ -72,6 +72,17 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
   preview restarted only after the file stops growing; measurements decode the callback bytes when available.
 - Menu taller than the screen: now in a ScrollView that follows the cursor.
 
+## 0.14 session → 0.15
+
+- Measurement shot: shutter callback at +109 ms, no JPEG callback, no new file seen in 30 s, yet
+  `LTL00002.JPG` (3008×2000) is on the card. A normal capture (shutter at +319 ms) and the next measurement
+  (+326 ms) saved **nothing**. In those two the 300 ms release came *before* the shutter fired.
+- The ScrollView around the menu took key focus: the d-pad scrolled it instead of moving the cursor.
+- 0.15: no picture-size / jpeg-quality changes in live view (measurement = `storage-fmt` jpeg only, decoded at
+  ~750 px); release the shutter 500 ms after Sony's `ShutterListener` fires (2.5 s fallback, as Recipe Lab
+  holds it); `StoreImageCompleteListener` and `OnCaptureStatusListener` logged, and the stored file name used
+  when Android's listing doesn't show it; log lines carry seconds since start; scroll views never take focus.
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and
