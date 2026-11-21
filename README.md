@@ -3,7 +3,7 @@
 In-camera **color negative inversion** for the **Sony a6500**, built as a PlayMemories Camera App (PMCA),
 installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a desktop reference engine.
 
-> Status: **early (0.25)**: inverted live view and in-camera positives work; calibration features are new
+> Status: **early (0.26)**: inverted live view and in-camera positives work; calibration features are new
 > and still being tested on the camera. Not ready for everyday use.
 > Unofficial, not affiliated with Sony. Installing custom apps is at your own risk.
 
@@ -28,7 +28,7 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 | `docs/` | Plan, checkpoints, API findings |
 | `toolchain*/`, `scans/`, `build/`, `dist/` | Local only (git-ignored) |
 
-## On the camera (0.25)
+## On the camera (0.26)
 
 The app opens straight into **inverted live view**: the camera's own image processor applies an inverted
 tone curve, so live view and captured JPEGs are positives (the RAW stays the untouched negative).
@@ -37,7 +37,7 @@ tone curve, so live view and captured JPEGs are positives (the RAW stays the unt
   the slider to reset. **Center**: positive ↔ negative. **Shutter / round button**: capture.
 - **Menu**: *Calibrate film base* (makes the clear film base neutral with the camera's white balance: the
   orange mask stops turning blue, and the base becomes the black point),
-  *Film* (labels the roll with its stock, e.g. Kodak Pro 160; shown in the status pill), *Check alignment* (measures the film edge angle and says which way to rotate), *Review captures*
+  *Film* (labels the roll with its stock, shown in the status pill; only stocks measured so far: Kodak Ektacolor Pro 160), *Check alignment* (measures the film edge angle and says which way to rotate), *Review captures*
   (browse the positives the app made; left/right or the dials, or tap the screen's left/right third), alignment guides,
   2 s capture delay, silent shutter, themes, display flip, *Develop newest frame* (in-camera positive of the
   newest RAW+JPEG negative, auto-cropped), log, reset roll, exit.

@@ -130,7 +130,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.25, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.26, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -181,9 +181,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private int aspectPct = 80;
     private int calTemp, calGm;                                    // last good base calibration (start point of the next)
     private final int[] baseCodes = new int[3];                    // film base RGB codes after calibration (0 = not calibrated)
-    /** Film stock of the roll (a label for now; per-stock presets later, docs/plan.md). Menu › Film cycles these. */
-    private static final String[] STOCKS = {"", "Kodak Pro 160", "Kodak Portra 160", "Kodak Portra 400", "Kodak Ektar 100",
-            "Kodak Gold 200", "Kodak UltraMax 400", "Fujifilm 400H", "Fujifilm C200", "Cinestill 800T"};
+    /**
+     * Film stock of the roll: a label only (no settings attached). Only stocks whose base was measured on this rig are
+     * listed: Kodak Ektacolor Pro 160 (2800 K, G1, base codes 177/179/179, 2026-11-21). Menu › Film cycles these.
+     */
+    private static final String[] STOCKS = {"", "Kodak Ektacolor Pro 160"};
     private String stock = "";
     // Review captures: full-screen viewer over the live view (Menu › Review captures, or the playback button)
     private boolean reviewOpen;
@@ -1494,6 +1496,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             wbActive = o.optBoolean("wb", false); temp = o.optInt("temp", 5500);
             shiftAB = o.optInt("ab", 0); shiftGM = o.optInt("gm", 0);
             stock = o.optString("stock", "");
+            if ("Kodak Pro 160".equals(stock)) stock = "Kodak Ektacolor Pro 160";      // 0.23's name for it
             baseCodes[0] = o.optInt("baseR", 0); baseCodes[1] = o.optInt("baseG", 0); baseCodes[2] = o.optInt("baseB", 0);
         } catch (Throwable t) { err("load roll", t); }
     }
