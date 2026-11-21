@@ -72,6 +72,11 @@ Done:
 - Ideas from other tools (NLP roll analysis, darktable negadoctor Dmin from border, NegPy auto-crop, FilmLab
   delayed shutter, Nikon D850 negative mode) are reflected above; still open: roll-level analysis across frames,
   B&W mode, XMP crop sidecars for Lightroom.
+- **0.14–0.16 (2026-11-20, on the camera)**: capture/measurement fixes (see `docs/api-usage/probe5-8.md`: release the
+  shutter only after Sony's ShutterListener; no picture-size changes in live view), scrolling menu, and **full theme
+  layouts** (`Theme.layout`, one builder per concept in MainActivity; the live view surface is sized to each layout's
+  window and an opaque `OverlayViews.Mask` covers the rest; whether the camera scales its live view to the surface is
+  logged, not yet known). 0.15 and 0.16 untested on the camera.
 - **Linux/macOS** go through the same tool (toolchain-linux/ or toolchain-macos/; PMCA-RE from source in a venv
   on Linux, its Intel binary on macOS). Only CI has run them; camera USB on them is untested. WSL2 can't start
   on this PC (Proxmox VM without nested virtualization); the owner can provide SSH to a Linux VM/LXC.
