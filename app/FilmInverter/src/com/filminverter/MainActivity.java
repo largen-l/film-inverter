@@ -42,7 +42,7 @@ import java.util.Map;
  * Opens straight into inverted live view (hardware tone curve, see docs/api-usage/probe3.md).
  *   Chips / UP-DOWN: choose Black, White, Gamma, Temp, A–B, G–M.  Slider / LEFT-RIGHT / dials: change it.
  *   Double-tap the slider: reset.  CENTER: positive <-> negative.  SHUTTER / round button: capture.
- *   MENU / ☰: menu (calibrate base, film stock, alignment check, review captures, guides, delay, silent shutter,
+ *   MENU / ☰: menu (calibrate base, film (saved bases), alignment check, review captures, guides, delay, silent shutter,
  *   theme, flip, develop newest frame, lens controls, log, reset roll, exit). In the menu UP/DOWN move, CENTER
  *   selects, MENU closes. PLAYBACK (if the camera passes it on) or Menu › Review captures: browse the positives.
  *
@@ -125,12 +125,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         }, ui);
         loadPrefs();
         loadRoll();
+        loadFilms();
         List<String> errs = new ArrayList<String>();
         themes = Theme.all(new File(card, "FILMINV/THEMES"), errs);
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.26, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.27, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -182,10 +183,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private int calTemp, calGm;                                    // last good base calibration (start point of the next)
     private final int[] baseCodes = new int[3];                    // film base RGB codes after calibration (0 = not calibrated)
     /**
-     * Film stock of the roll: a label only (no settings attached). Only stocks whose base was measured on this rig are
-     * listed: Kodak Ektacolor Pro 160 (2800 K, G1, base codes 177/179/179, 2026-11-21). Menu › Film cycles these.
+     * Saved base measurements, one per film, in FILMINV/FILMS.TXT (JSON; names can be edited there on a computer).
+     * Menu › Film loads one (white balance, base color, black point); Calibrate film base saves its result under the
+     * selected film, or as a new "Film N" when none is selected. `stock` is the selected film's name ("" = none).
      */
-    private static final String[] STOCKS = {"", "Kodak Ektacolor Pro 160"};
+    private final List<JSONObject> films = new ArrayList<JSONObject>();
     private String stock = "";
     // Review captures: full-screen viewer over the live view (Menu › Review captures, or the playback button)
     private boolean reviewOpen;
@@ -1281,11 +1283,11 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         addMenu("Check alignment", new Action() { public void run() { runAsync(new Runnable() { public void run() { checkAlignment(); } }); } });
         addMenu("Review captures", new Action() { public void run() {
             if (capturing || busy) showToast("Busy, try again in a moment"); else openReview(); } });
-        addMenu("Film: " + (stock.length() == 0 ? "not labeled" : stock), new Action() { public void run() {
-            int i = java.util.Arrays.asList(STOCKS).indexOf(stock);
-            stock = STOCKS[(i + 1) % STOCKS.length];
-            saveRoll(); refreshPills();
-            showToast("Film: " + (stock.length() == 0 ? "not labeled" : stock));
+        addMenu("Film: " + (stock.length() == 0 ? (films.isEmpty() ? "none saved yet" : "none") : stock), new Action() { public void run() {
+            if (films.isEmpty()) { showToast("No saved films: Calibrate film base saves one"); return; }
+            int i = -1;
+            for (int k = 0; k < films.size(); k++) if (films.get(k).optString("name").equals(stock)) i = k;
+            selectFilm(i + 1 < films.size() ? films.get(i + 1) : null);
             menuOpen = true; menuScroll.setVisibility(View.VISIBLE); rebuildMenu(); } });   // stay in the menu to keep cycling
         addMenu("Guides: " + (guidesOn ? "on" : "off"), new Action() { public void run() {
             guidesOn = !guidesOn; guides.setVisibility(guidesOn ? View.VISIBLE : View.GONE); savePrefs(); } });
@@ -1319,7 +1321,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         addMenu("Reset roll (levels + WB)", new Action() { public void run() {
             inLo = 0; inHi = 1023; gammaX100 = 85; wbActive = false; temp = 5500; shiftAB = 0; shiftGM = 0;
             java.util.Arrays.fill(baseCodes, 0);
-            restoreWbOnly(); requestCurve(); saveRoll(); refreshRow(); showToast("Roll reset"); } });
+            stock = "";                                         // saved films stay; Menu › Film loads one again
+            restoreWbOnly(); requestCurve(); saveRoll(); refreshRow(); refreshPills();
+            showToast(films.isEmpty() ? "Roll reset" : "Roll reset: Menu › Film loads a saved base"); } });
         addMenu("Exit", new Action() { public void run() { exitApp(); } });
         menuSel = Math.min(menuSel, menuItems.size() - 1);
         if (themes != null) styleMenu();
@@ -1482,6 +1486,103 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     private File rollFile() { return new File(card, "FILMINV/ROLL.TXT"); }
+
+    private File filmsFile() { return new File(card, "FILMINV/FILMS.TXT"); }
+
+    private void loadFilms() {
+        films.clear();
+        try {
+            File f = filmsFile();
+            if (f.exists()) {
+                byte[] b = new byte[(int) Math.min(f.length(), 64 * 1024)];
+                java.io.FileInputStream in = new java.io.FileInputStream(f);
+                int n = in.read(b);
+                in.close();
+                org.json.JSONArray a = new JSONObject(new String(b, 0, Math.max(0, n), "UTF-8")).getJSONArray("films");
+                for (int i = 0; i < a.length(); i++) films.add(a.getJSONObject(i));
+            } else if (wbActive && baseCodes[1] > 0) {
+                // 0.22-0.26 kept one base in the roll: it becomes the first saved film. 177/179/179 is the owner's
+                // Kodak Ektacolor Pro 160 measurement of 2026-11-21 (written to ROLL.TXT by hand, without a label).
+                String name = stock.length() > 0 ? stock
+                        : baseCodes[0] == 177 && baseCodes[1] == 179 && baseCodes[2] == 179 ? "Kodak Ektacolor Pro 160" : "Film 1";
+                films.add(filmFromCurrent(name));
+                stock = name;
+                saveFilms();
+                saveRoll();
+                out("films: first film \"" + name + "\" from the roll's base");
+            }
+        } catch (Throwable t) { err("load films", t); }
+        if (stock.length() > 0 && findFilm(stock) == null) stock = "";
+    }
+
+    private void saveFilms() {
+        try {
+            org.json.JSONArray a = new org.json.JSONArray();
+            for (JSONObject o : films) a.put(o);
+            JSONObject root = new JSONObject();
+            root.put("films", a);
+            File f = filmsFile();
+            f.getParentFile().mkdirs();
+            FileOutputStream fo = new FileOutputStream(f);
+            fo.write(root.toString(1).getBytes("UTF-8"));
+            fo.close();
+        } catch (Throwable t) { err("save films", t); }
+    }
+
+    private JSONObject findFilm(String name) {
+        for (JSONObject o : films) if (o.optString("name").equals(name)) return o;
+        return null;
+    }
+
+    /** The current base measurement (white balance, base color, black point) under `name`. */
+    private JSONObject filmFromCurrent(String name) throws Exception {
+        JSONObject o = new JSONObject();
+        o.put("name", name);
+        o.put("temp", temp); o.put("gm", shiftGM); o.put("ab", shiftAB);
+        o.put("baseR", baseCodes[0]); o.put("baseG", baseCodes[1]); o.put("baseB", baseCodes[2]);
+        o.put("inHi", inHi);
+        o.put("measured", now());
+        return o;
+    }
+
+    /** Selects a saved film and applies its base measurement; null = no film (the current settings stay). */
+    private void selectFilm(JSONObject f) {
+        if (f == null) {
+            stock = "";
+            showToast("Film: none (settings unchanged)");
+        } else {
+            stock = f.optString("name");
+            temp = f.optInt("temp", temp); shiftGM = f.optInt("gm", 0); shiftAB = f.optInt("ab", 0);
+            baseCodes[0] = f.optInt("baseR", 0); baseCodes[1] = f.optInt("baseG", 0); baseCodes[2] = f.optInt("baseB", 0);
+            inHi = Math.max(inLo + 64, Math.min(1023, f.optInt("inHi", inHi)));
+            applyWb();
+            requestCurve();
+            refreshRow();
+            out("film loaded: " + f);
+            showToast("Film: " + stock + " (" + temp + " K, " + shiftLabel() + ")");
+        }
+        saveRoll();
+        refreshPills();
+    }
+
+    /** After a good calibration: save it under the selected film, or as a new "Film N". */
+    private String saveCalibrationAsFilm() {
+        try {
+            String name = stock;
+            if (name.length() == 0) {
+                int n = films.size() + 1;
+                while (findFilm("Film " + n) != null) n++;
+                name = "Film " + n;
+            }
+            JSONObject o = filmFromCurrent(name), old = findFilm(name);
+            if (old != null) films.set(films.indexOf(old), o); else films.add(o);
+            stock = name;
+            saveFilms();
+            saveRoll();
+            refreshPills();
+            return name;
+        } catch (Throwable t) { err("save film", t); return null; }
+    }
 
     private void loadRoll() {
         try {
@@ -2033,10 +2134,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             saveRoll();
             refreshRow();
             boolean good = worst(best) < 0.05;
-            if (good) { calTemp = temp; calGm = shiftGM; savePrefs(); }
-            out(String.format("calib done: %dK G-M %d, r=[%.3f %.3f]%s", temp, shiftGM, best[0], best[1], good ? "" : " (not neutral)"));
+            String saved = null;
+            if (good) { calTemp = temp; calGm = shiftGM; savePrefs(); saved = saveCalibrationAsFilm(); }
+            out(String.format("calib done: %dK G-M %d, r=[%.3f %.3f]%s", temp, shiftGM, best[0], best[1], good ? "" : " (not neutral)")
+                    + (saved != null ? ", saved as film \"" + saved + "\"" : ""));
             showToast((good ? "Base neutral: " : "Base close (check): ") + temp + " K, " + shiftLabel()
-                    + String.format(" (off %.0f%%/%.0f%%)", 100 * Math.abs(best[0]), 100 * Math.abs(best[1])));
+                    + String.format(" (off %.0f%%/%.0f%%)", 100 * Math.abs(best[0]), 100 * Math.abs(best[1]))
+                    + (saved != null ? ", saved as " + saved : ""));
         } catch (Throwable t) {
             err("calibrate", t);
             showToast("Calibration failed: " + t.getMessage());
