@@ -55,13 +55,13 @@ public final class Theme {
     public static List<Theme> builtIns() {
         return new ArrayList<Theme>(Arrays.asList(
             new Theme("minimal", "Minimal", "#f2c14e", "#0b0b0b", "#f2f2f2", "#b8b8b8", "#c7080808", "#8c000000", "#f2f2f2", "#3a3a3a", 12),
-            new Theme("camera", "Camera", "#ff8a3d", "#000000", "#ececec", "#bdbdbd", "#ff000000", "#ff141414", "#ececec", "#2a2a2a", 6),
-            new Theme("material", "Material", "#82d5c8", "#00201b", "#e3e3e3", "#bec9c6", "#ff1d2321", "#ff111414", "#e3e3e3", "#5b6563", 20),
+            new Theme("camera", "Camera", "#ff8a3d", "#000000", "#ececec", "#bdbdbd", "#e6000000", "#f0141414", "#ececec", "#2a2a2a", 6),
+            new Theme("material", "Material", "#82d5c8", "#00201b", "#e3e3e3", "#bec9c6", "#eb1d2321", "#d9111414", "#e3e3e3", "#5b6563", 20),
             new Theme("glass", "Glass", "#ffd60a", "#111111", "#ffffff", "#d0d0d0", "#9e1c1c1e", "#8c1e1e1e", "#ffffff", "#4dffffff", 24),
-            new Theme("enlarger", "Enlarger", "#ff3b2e", "#fff3f1", "#2b2b2b", "#3a3a3a", "#ffbfc2c5", "#ff2c2a26", "#e9c84a", "#5a5d61", 6),
-            new Theme("lighttable", "Light table", "#d1242f", "#ffffff", "#1d1d1d", "#4a4a4a", "#fff4f6f7", "#fff3e3b5", "#e8a44a", "#2a2118", 3),
-            new Theme("scope", "Scope", "#52e08a", "#050505", "#d9d9d9", "#8a8a8a", "#ff050505", "#b3000000", "#52e08a", "#2c2c2c", 0),
-            new Theme("safelight", "Safelight", "#ff4a3d", "#000000", "#ff4a3d", "#c0392b", "#ff000000", "#ff000000", "#ff4a3d", "#ff4a3d", 14)
+            new Theme("enlarger", "Enlarger", "#ff3b2e", "#fff3f1", "#e6e6e6", "#a8a8a8", "#f0262829", "#ff1a1714", "#e9c84a", "#5a5d61", 6),
+            new Theme("lighttable", "Light table", "#e0443c", "#ffffff", "#f3e3b5", "#b8a888", "#e6151210", "#f03b3122", "#e8a44a", "#2a2118", 3),
+            new Theme("scope", "Scope", "#52e08a", "#050505", "#d9d9d9", "#8a8a8a", "#e6050505", "#b3000000", "#52e08a", "#2c2c2c", 0),
+            new Theme("safelight", "Safelight", "#ff4a3d", "#000000", "#ff4a3d", "#c0392b", "#f0000000", "#ff000000", "#ff4a3d", "#ff4a3d", 14)
         ));
     }
 

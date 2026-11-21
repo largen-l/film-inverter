@@ -97,6 +97,17 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
   file by name for up to 15 s); the Sony capture listeners are gone (not used by 0.10). Measurement still switches
   `storage-fmt` to `jpeg` around its shot: the remaining unknown if 0.17 still fails.
 
+## 0.17 session → 0.18
+
+- Still: the first shot of each session is on the card (`LTL00004`, `LTL00005`), Android never lists it, and nothing
+  after it is saved. Every broken session since 0.13 started with a measurement shot that switched `storage-fmt` to
+  `jpeg`; probe 0.10 (all shots saved) never switched. 0.18 changes no camera setting for measurement shots (they are
+  RAW+JPEG like any capture) and logs what Android lists in the newest DCIM folder at start and on every timeout.
+- Display: the a6500 panel is 16:9 but the framebuffer is 640x480, so pixels show 4/3 wide (circles looked squashed).
+  The 3:2 live view spans the full height and x ~50..590. The 0.16 layout windows (SurfaceView resized) cropped the
+  picture: the camera does not scale its live view to the surface. 0.18: live view always full screen, themes only
+  decorate the side bars, panels hide after 5 s idle (Menu > Controls), round shapes and text corrected by 0.75.
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and

@@ -97,7 +97,9 @@ public class Slider extends View {
                 r.set(x0, cy - 2, x, cy + 2);
                 c.drawRoundRect(r, 2, 2, paint);
                 paint.setColor(thumbColor);
-                c.drawCircle(x, cy, 12, paint);
+                float rx = 12 * MainActivity.PA;               // round on the wide-pixel screen
+                r.set(x - rx, cy - 12, x + rx, cy + 12);
+                c.drawOval(r, paint);
         }
     }
 

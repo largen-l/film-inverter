@@ -37,7 +37,16 @@ final class OverlayViews {
 
         @Override
         protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight(), cx = w / 2f, cy = h / 2f, rad = Math.min(cx, cy) - 2;
+            // drawn in a space where 1 unit across = 1 unit down on the screen (the view is PA times narrower)
+            float pa = MainActivity.PA;
+            c.save();
+            c.scale(pa, 1f);
+            float w = getWidth() / pa, h = getHeight(), cx = w / 2f, cy = h / 2f, rad = Math.min(cx, cy) - 2;
+            drawButton(c, w, h, cx, cy, rad);
+            c.restore();
+        }
+
+        private void drawButton(Canvas c, float w, float h, float cx, float cy, float rad) {
             p.setStyle(Paint.Style.FILL);
             if (style == SQUARE) {
                 p.setColor(dim(fill));
@@ -79,69 +88,54 @@ final class OverlayViews {
     }
 
     /**
-     * Opaque frame around the live view: fills everything except a (rounded) window. Optional bands of a second
-     * color around the window (a film strip with sprocket holes, an easel with a tick ruler). Static drawing.
+     * Decoration in the dark bars left and right of the 3:2 picture (x < left, x > right): never over the picture.
+     * SPROCKETS: film edges with sprocket holes (Light table). TICKS: easel blades with a scale (Enlarger).
+     * SCALE: a plain tick scale (Scope). PLAIN: just the color.
      */
-    static final class Mask extends View {
-        static final int PLAIN = 0, SPROCKETS = 1, RULER = 2;
+    static final class SideBars extends View {
+        static final int PLAIN = 0, SPROCKETS = 1, TICKS = 2, SCALE = 3;
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path path = new Path();
-        private final RectF hole = new RectF(), band = new RectF(), tmp = new RectF();
-        private int outer, bandColor, deco, decoColor;
-        private float radius, bandL, bandT, bandR, bandB;
-        private boolean hasBand;
+        private final RectF r = new RectF();
+        private int color, deco, decoColor, left, right;
 
-        Mask(Context c) { super(c); }
+        SideBars(Context c) { super(c); }
 
-        /** Window in view pixels (left, top, right, bottom) and corner radius. */
-        void setWindow(int outer, float l, float t, float r, float b, float radius) {
-            this.outer = outer; hole.set(l, t, r, b); this.radius = radius; invalidate();
-        }
-
-        /** A band of `color` extending the given amounts outside the window, with a decoration. */
-        void setBand(int color, float l, float t, float r, float b, int deco, int decoColor) {
-            hasBand = true; bandColor = color; bandL = l; bandT = t; bandR = r; bandB = b;
-            this.deco = deco; this.decoColor = decoColor; invalidate();
+        void set(int color, int left, int right, int deco, int decoColor) {
+            this.color = color; this.left = left; this.right = right; this.deco = deco; this.decoColor = decoColor;
+            invalidate();
         }
 
         @Override
         protected void onDraw(Canvas c) {
             float w = getWidth(), h = getHeight();
             p.setStyle(Paint.Style.FILL);
-            path.reset();
-            path.setFillType(Path.FillType.EVEN_ODD);
-            path.addRect(0, 0, w, h, Path.Direction.CW);
-            path.addRoundRect(hole, radius, radius, Path.Direction.CW);
-            p.setColor(outer);
-            c.drawPath(path, p);
-            if (!hasBand) return;
-            band.set(hole.left - bandL, hole.top - bandT, hole.right + bandR, hole.bottom + bandB);
-            path.reset();
-            path.setFillType(Path.FillType.EVEN_ODD);
-            path.addRoundRect(band, 3, 3, Path.Direction.CW);
-            path.addRect(hole, Path.Direction.CW);
-            p.setColor(bandColor);
-            c.drawPath(path, p);
+            p.setColor(color);
+            c.drawRect(0, 0, left, h, p);
+            c.drawRect(right, 0, w, h, p);
             p.setColor(decoColor);
-            if (deco == SPROCKETS) {
-                float hw = 12, gap = 26, sh = Math.min(12, bandT * 0.45f);
-                for (float x = band.left + 10; x + hw <= band.right - 10; x += gap) {
-                    tmp.set(x, band.top + (bandT - sh) / 2f, x + hw, band.top + (bandT + sh) / 2f);
-                    c.drawRoundRect(tmp, 2, 2, p);
-                    tmp.set(x, hole.bottom + (bandB - sh) / 2f, x + hw, hole.bottom + (bandB + sh) / 2f);
-                    c.drawRoundRect(tmp, 2, 2, p);
+            if (deco == SPROCKETS) {                           // holes: 12 tall, every 26, rounded; width corrected
+                float hw = 16 * MainActivity.PA;
+                for (float y = 8; y + 12 <= h; y += 26) {
+                    r.set(left / 2f - hw / 2f, y, left / 2f + hw / 2f, y + 12);
+                    c.drawRoundRect(r, 2 * MainActivity.PA, 2, p);
+                    r.set((right + w) / 2f - hw / 2f, y, (right + w) / 2f + hw / 2f, y + 12);
+                    c.drawRoundRect(r, 2 * MainActivity.PA, 2, p);
                 }
-            } else if (deco == RULER) {
+            } else if (deco == TICKS || deco == SCALE) {
                 p.setStrokeWidth(1);
-                for (float x = hole.left; x <= hole.right; x += 12) c.drawLine(x, 6, x, 14, p);   // easel scale, screen top
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(3);
-                c.drawRect(hole.left - 1.5f, hole.top - 1.5f, hole.right + 1.5f, hole.bottom + 1.5f, p);
-                p.setStyle(Paint.Style.FILL);
+                for (float y = 0; y <= h; y += 12) {
+                    float len = ((int) (y / 12)) % 5 == 0 ? 14 : 7;
+                    c.drawLine(left - len, y, left, y, p);
+                    c.drawLine(right, y, right + len, y, p);
+                }
+                if (deco == TICKS) {                           // the blade edges
+                    p.setStrokeWidth(3);
+                    c.drawLine(left - 1.5f, 0, left - 1.5f, h, p);
+                    c.drawLine(right + 1.5f, 0, right + 1.5f, h, p);
+                }
             }
         }
     }
-
     /** Enlarger filter dial: a colored knob with a pointer at `fraction` of its travel (-150°..+150°). */
     static final class Dial extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -159,7 +153,15 @@ final class OverlayViews {
 
         @Override
         protected void onDraw(Canvas c) {
-            float w = getWidth(), h = getHeight(), cx = w / 2f, cy = h / 2f, r = Math.min(cx, cy) - 4;
+            float pa = MainActivity.PA;
+            c.save();
+            c.scale(pa, 1f);                                   // round on the wide-pixel screen
+            float w = getWidth() / pa, h = getHeight(), cx = w / 2f, cy = h / 2f, r = Math.min(cx, cy) - 4;
+            drawDial(c, cx, cy, r);
+            c.restore();
+        }
+
+        private void drawDial(Canvas c, float cx, float cy, float r) {
             p.setStyle(Paint.Style.FILL);
             p.setColor(0x55000000);
             c.drawCircle(cx, cy + 3, r, p);

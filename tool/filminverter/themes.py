@@ -14,13 +14,13 @@ LAYOUTS = ["minimal", "camera", "material", "glass", "enlarger", "lighttable", "
 
 BUILTINS: List[Dict] = [
     {"name": "Minimal", "layout": "minimal", "accent": "#f2c14e", "onAccent": "#0b0b0b", "text": "#f2f2f2", "textDim": "#b8b8b8", "bar": "#c7080808", "pill": "#8c000000", "pillText": "#f2f2f2", "chipBorder": "#3a3a3a", "radius": 12},
-    {"name": "Camera", "layout": "camera", "accent": "#ff8a3d", "onAccent": "#000000", "text": "#ececec", "textDim": "#bdbdbd", "bar": "#ff000000", "pill": "#ff141414", "pillText": "#ececec", "chipBorder": "#2a2a2a", "radius": 6},
-    {"name": "Material", "layout": "material", "accent": "#82d5c8", "onAccent": "#00201b", "text": "#e3e3e3", "textDim": "#bec9c6", "bar": "#ff1d2321", "pill": "#ff111414", "pillText": "#e3e3e3", "chipBorder": "#5b6563", "radius": 20},
+    {"name": "Camera", "layout": "camera", "accent": "#ff8a3d", "onAccent": "#000000", "text": "#ececec", "textDim": "#bdbdbd", "bar": "#e6000000", "pill": "#f0141414", "pillText": "#ececec", "chipBorder": "#2a2a2a", "radius": 6},
+    {"name": "Material", "layout": "material", "accent": "#82d5c8", "onAccent": "#00201b", "text": "#e3e3e3", "textDim": "#bec9c6", "bar": "#eb1d2321", "pill": "#d9111414", "pillText": "#e3e3e3", "chipBorder": "#5b6563", "radius": 20},
     {"name": "Glass", "layout": "glass", "accent": "#ffd60a", "onAccent": "#111111", "text": "#ffffff", "textDim": "#d0d0d0", "bar": "#9e1c1c1e", "pill": "#8c1e1e1e", "pillText": "#ffffff", "chipBorder": "#4dffffff", "radius": 24},
-    {"name": "Enlarger", "layout": "enlarger", "accent": "#ff3b2e", "onAccent": "#fff3f1", "text": "#2b2b2b", "textDim": "#3a3a3a", "bar": "#ffbfc2c5", "pill": "#ff2c2a26", "pillText": "#e9c84a", "chipBorder": "#5a5d61", "radius": 6},
-    {"name": "Light table", "layout": "lighttable", "accent": "#d1242f", "onAccent": "#ffffff", "text": "#1d1d1d", "textDim": "#4a4a4a", "bar": "#fff4f6f7", "pill": "#fff3e3b5", "pillText": "#e8a44a", "chipBorder": "#2a2118", "radius": 3},
-    {"name": "Scope", "layout": "scope", "accent": "#52e08a", "onAccent": "#050505", "text": "#d9d9d9", "textDim": "#8a8a8a", "bar": "#ff050505", "pill": "#b3000000", "pillText": "#52e08a", "chipBorder": "#2c2c2c", "radius": 0},
-    {"name": "Safelight", "layout": "safelight", "accent": "#ff4a3d", "onAccent": "#000000", "text": "#ff4a3d", "textDim": "#c0392b", "bar": "#ff000000", "pill": "#ff000000", "pillText": "#ff4a3d", "chipBorder": "#ff4a3d", "radius": 14},
+    {"name": "Enlarger", "layout": "enlarger", "accent": "#ff3b2e", "onAccent": "#fff3f1", "text": "#e6e6e6", "textDim": "#a8a8a8", "bar": "#f0262829", "pill": "#ff1a1714", "pillText": "#e9c84a", "chipBorder": "#5a5d61", "radius": 6},
+    {"name": "Light table", "layout": "lighttable", "accent": "#e0443c", "onAccent": "#ffffff", "text": "#f3e3b5", "textDim": "#b8a888", "bar": "#e6151210", "pill": "#f03b3122", "pillText": "#e8a44a", "chipBorder": "#2a2118", "radius": 3},
+    {"name": "Scope", "layout": "scope", "accent": "#52e08a", "onAccent": "#050505", "text": "#d9d9d9", "textDim": "#8a8a8a", "bar": "#e6050505", "pill": "#b3000000", "pillText": "#52e08a", "chipBorder": "#2c2c2c", "radius": 0},
+    {"name": "Safelight", "layout": "safelight", "accent": "#ff4a3d", "onAccent": "#000000", "text": "#ff4a3d", "textDim": "#c0392b", "bar": "#f0000000", "pill": "#ff000000", "pillText": "#ff4a3d", "chipBorder": "#ff4a3d", "radius": 14},
 ]
 
 _COLOR = re.compile(r"^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
