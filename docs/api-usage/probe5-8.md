@@ -59,6 +59,19 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
   real, and the JPEG can take > 3 s to appear. 0.10 compares against the newest JPEG *before* the shot and polls
   up to 10 s, using only file times.
 
+## 0.13 first app session (2026-11-20) → 0.14
+
+- Calibration's first measurement shot **was taken** (`DCIM/11261120/LTL00001.JPG`, 3008×2000, Q25, identity
+  curve: a clean shot of the orange base, so the JPEG-only/small-size settings work), but the app never saw it:
+  it landed in a **new day folder** created mid-session and appeared later than the 10 s wait.
+- After that **the camera saved nothing**: four more measurement shots and two normal captures left no ARW or
+  JPEG. Likely cause: the app restarted preview (and fired the next `takePicture`) while the first shot was
+  still being saved, and `takePicture`/`cancelTakePicture` were called from a worker thread.
+- 0.14: one `shoot()` routine for captures and measurements: camera calls on the UI thread, shutter and JPEG
+  callbacks logged with times, new files found by name across all DCIM folders (no file times), up to 30 s,
+  preview restarted only after the file stops growing; measurements decode the callback bytes when available.
+- Menu taller than the screen: now in a ScrollView that follows the cursor.
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and

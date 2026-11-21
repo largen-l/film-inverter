@@ -63,6 +63,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private TextView modePill, framePill, basePill, wbPill, toast, menuBtn, valueLabel, logText;
     private OverlayViews.CaptureButton captureBtn;
     private LinearLayout bar, chipRow, menuPanel;
+    private ScrollView menuScroll;
     private ScrollView logScroll;
     private Slider slider;
     private final List<TextView> chips = new ArrayList<TextView>();
@@ -128,7 +129,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         buildUi();
         applyTheme();
         applyWindowFlip();
-        out("=== Film Inverter 0.13, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.14, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -268,10 +269,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         menuPanel = new LinearLayout(this);
         menuPanel.setOrientation(LinearLayout.VERTICAL);
         menuPanel.setPadding(8, 8, 8, 8);
-        menuPanel.setVisibility(View.GONE);
+        // in a ScrollView: the menu is taller than the space above the bar; styleMenu keeps the cursor in view
+        menuScroll = new ScrollView(this);
+        menuScroll.setVerticalScrollBarEnabled(true);
+        menuScroll.addView(menuPanel, new FrameLayout.LayoutParams(-1, -2));
+        menuScroll.setVisibility(View.GONE);
         FrameLayout.LayoutParams ml = new FrameLayout.LayoutParams(300, -2, Gravity.BOTTOM | Gravity.LEFT);
-        ml.bottomMargin = 116; ml.leftMargin = 12;
-        root.addView(menuPanel, ml);
+        ml.bottomMargin = 116; ml.leftMargin = 12; ml.topMargin = 8;
+        root.addView(menuScroll, ml);
 
         logScroll = new ScrollView(this);
         logText = new TextView(this);
@@ -516,19 +521,30 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             m.setTextColor(sel ? t.onAccent : t.text);
             m.setBackgroundDrawable(sel ? shape(t.accent, 0, Math.min(8, t.radius)) : null);
         }
+        menuScroll.post(new Runnable() { public void run() { scrollMenuToCursor(); } });
+    }
+
+    /** Scrolls the menu just enough that the selected item is fully visible. */
+    private void scrollMenuToCursor() {
+        if (menuSel < 0 || menuSel >= menuItems.size()) return;
+        View v = menuItems.get(menuSel);
+        int top = v.getTop() - 8, bottom = v.getBottom() + 8, y = menuScroll.getScrollY(), h = menuScroll.getHeight();
+        if (h <= 0) return;
+        if (top < y) menuScroll.scrollTo(0, Math.max(0, top));
+        else if (bottom > y + h) menuScroll.scrollTo(0, bottom - h);
     }
 
     private void toggleMenu() {
         menuOpen = !menuOpen;
         if (menuOpen) rebuildMenu();
-        menuPanel.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
+        menuScroll.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
     }
 
     private void activateMenu() {
         Action a = menuActions.get(menuSel);
         out("menu: " + menuItems.get(menuSel).getText());
         menuOpen = false;
-        menuPanel.setVisibility(View.GONE);
+        menuScroll.setVisibility(View.GONE);
         a.run();
     }
 
@@ -825,61 +841,96 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         capturing = true;
         refreshPills();
         final boolean pos = positive;
-        final File before = newestDcimJpeg();
-        try {
-            final Camera cam = cameraEx.getNormalCamera();
-            out("CAPTURE " + (pos ? "POSITIVE" : "NEGATIVE") + " in " + inLo + ".." + inHi + " g" + gammaX100
-                    + (wbActive ? " " + temp + "K " + shiftLabel() : " camWB"));
-            cam.takePicture(null, null, null);
-            ui.postDelayed(new Runnable() { public void run() {
-                try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); } } }, 300);
-            new Thread(new Runnable() { public void run() {
-                File jpg = waitForNewJpeg(before, 10000);
-                try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-                ui.post(new Runnable() { public void run() {
-                    try { if (cameraEx != null) cam.startPreview(); } catch (Throwable t) { err("restart preview", t); }
-                    capturing = false;
-                    refreshPills();
-                } });
-                out("JPEG from capture: " + (jpg == null ? "none (RAW only?)" : jpg.getName()));
-                if (pos && jpg != null) rememberSkip(jpg.getName());
-                showToast(jpg == null ? "Captured (no JPEG found)" : "Captured " + jpg.getName());
-            } }).start();
-        } catch (Throwable t) {
-            capturing = false;
-            refreshPills();
-            err("capture", t);
-        }
+        out("CAPTURE " + (pos ? "POSITIVE" : "NEGATIVE") + " in " + inLo + ".." + inHi + " g" + gammaX100
+                + (wbActive ? " " + temp + "K " + shiftLabel() : " camWB"));
+        new Thread(new Runnable() { public void run() {
+            try {
+                ShotResult r = shoot(false, 30000);
+                out("JPEG from capture: " + (r.file == null ? "none (RAW only?)" : r.file.getName()));
+                if (pos && r.file != null) rememberSkip(r.file.getName());
+                showToast(r.file == null ? (r.shutter ? "Captured (no JPEG found)" : "Capture failed: the shutter did not fire")
+                        : "Captured " + r.file.getName());
+            } catch (Throwable t) {
+                err("capture", t);
+                showToast("Capture failed: " + t.getMessage());
+            } finally {
+                capturing = false;
+                refreshPills();
+            }
+        } }).start();
     }
 
-    private File newestDcimJpeg() {
-        File best = null;
+    /** Every JPEG under DCIM (all folders: the camera starts a new folder each day, mid-session too). */
+    private java.util.Set<String> dcimJpegs() {
+        java.util.Set<String> s = new java.util.HashSet<String>();
         File[] sub = new File(card, "DCIM").listFiles();
         if (sub != null) for (File d : sub) {
             File[] fs = d.listFiles();
-            if (fs != null) for (File f : fs)
-                if (f.getName().toUpperCase().endsWith(".JPG") && (best == null || f.lastModified() > best.lastModified())) best = f;
+            if (fs != null) for (File f : fs) if (f.getName().toUpperCase().endsWith(".JPG")) s.add(f.getAbsolutePath());
         }
-        return best;
+        return s;
     }
 
-    /** A JPEG newer than `before` (by the card's own file times; the app clock says 1970), or null. */
-    private File waitForNewJpeg(File before, long timeoutMs) {
-        long end = System.currentTimeMillis() + timeoutMs;
-        while (System.currentTimeMillis() < end) {
-            try { Thread.sleep(400); } catch (InterruptedException e) { return null; }
-            File n = newestDcimJpeg();
-            if (n != null && (before == null || (!n.getAbsolutePath().equals(before.getAbsolutePath())
-                    && n.lastModified() >= before.lastModified()))) {
-                long len = -1;
-                for (int i = 0; i < 10 && n.length() != len; i++) {            // wait until the file stops growing
-                    len = n.length();
-                    try { Thread.sleep(250); } catch (InterruptedException e) { return n; }
-                }
-                return n;
+    /** Result of one shot: the JPEG file it wrote (if any is seen) and the JPEG bytes (if asked for). */
+    private static final class ShotResult { File file; byte[] data; boolean shutter, callback; }
+
+    /**
+     * One capture, run from a worker thread. Camera calls go to the UI thread (the thread that opened the camera),
+     * the shutter is "released" 300 ms later (Sony waits for that, see probe5-8.md), then this waits for the JPEG
+     * callback and for a new file to appear under DCIM and stop growing. Matching by file name, not time: the app
+     * clock is wrong. Preview restarts only once the camera is done, so the next shot is not started mid-save.
+     */
+    private ShotResult shoot(final boolean wantData, long timeoutMs) throws Exception {
+        if (cameraEx == null) throw new IllegalStateException("live view not running");
+        final java.util.Set<String> before = dcimJpegs();
+        final ShotResult r = new ShotResult();
+        final long t0 = System.currentTimeMillis();
+        final Throwable[] fail = new Throwable[1];
+        ui.post(new Runnable() { public void run() {
+            try {
+                if (cameraEx == null) throw new IllegalStateException("closed");
+                Camera.ShutterCallback sc = new Camera.ShutterCallback() { public void onShutter() {
+                    r.shutter = true; out("  shutter +" + (System.currentTimeMillis() - t0) + " ms"); } };
+                Camera.PictureCallback jc = !wantData ? null : new Camera.PictureCallback() {
+                    public void onPictureTaken(byte[] data, Camera c) {
+                        out("  JPEG callback +" + (System.currentTimeMillis() - t0) + " ms, "
+                                + (data == null ? "no data" : data.length + " bytes"));
+                        synchronized (r) { r.data = data; r.callback = true; }
+                    } };
+                cameraEx.getNormalCamera().takePicture(sc, null, jc);
+            } catch (Throwable t) { fail[0] = t; }
+        } });
+        ui.postDelayed(new Runnable() { public void run() {
+            try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); } } }, 300);
+        try {
+            long end = t0 + timeoutMs;
+            while (System.currentTimeMillis() < end && r.file == null) {
+                Thread.sleep(400);
+                if (fail[0] != null) throw new IllegalStateException("takePicture: " + fail[0].getMessage());
+                for (String path : dcimJpegs()) if (!before.contains(path)) { r.file = new File(path); break; }
             }
+            if (r.file != null) {
+                long len = -1;
+                for (int i = 0; i < 20 && r.file.length() != len; i++) { len = r.file.length(); Thread.sleep(300); }
+                out("  file " + r.file.getParentFile().getName() + "/" + r.file.getName() + " +"
+                        + (System.currentTimeMillis() - t0) + " ms, " + len + " bytes");
+            } else {
+                File[] dirs = new File(card, "DCIM").listFiles();
+                out("  no new JPEG after " + timeoutMs + " ms (shutter " + r.shutter + ", callback " + r.callback
+                        + ", DCIM folders " + (dirs == null ? "?" : String.valueOf(dirs.length)) + ")");
+            }
+            if (wantData) { long e2 = System.currentTimeMillis() + 3000; while (!r.callback && System.currentTimeMillis() < e2) Thread.sleep(100); }
+            Thread.sleep(300);
+        } finally {
+            final Object done = new Object();
+            final boolean[] ok = new boolean[1];
+            ui.post(new Runnable() { public void run() {
+                try { if (cameraEx != null) cameraEx.getNormalCamera().startPreview(); } catch (Throwable t) { err("restart preview", t); }
+                synchronized (done) { ok[0] = true; done.notifyAll(); }
+            } });
+            synchronized (done) { if (!ok[0]) done.wait(3000); }
         }
-        return null;
+        return r;
     }
 
     /** JPEGs that are not plain negatives (positive captures, measurement shots): the engine skips them. */
@@ -923,19 +974,21 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             measureCurve = true;
             applyCurve();
             Thread.sleep(400);                                    // let the curve and settings reach the sensor path
-            File before = newestDcimJpeg();
-            synchronized (this) { if (cameraEx == null) throw new IllegalStateException("closed"); cam.takePicture(null, null, null); }
-            Thread.sleep(300);
-            synchronized (this) { if (cameraEx != null) cameraEx.cancelTakePicture(); }
-            File jpg = waitForNewJpeg(before, 10000);
-            synchronized (this) { if (cameraEx != null) cam.startPreview(); }
-            if (jpg == null) throw new IllegalStateException("no measurement JPEG appeared");
-            rememberSkip(jpg.getName());
+            ShotResult r = shoot(true, 30000);
+            File jpg = r.file;
+            if (jpg == null && r.data == null)
+                throw new IllegalStateException(r.shutter ? "no measurement JPEG appeared" : "the shutter did not fire");
+            if (jpg != null) rememberSkip(jpg.getName());
             BitmapFactory.Options o = new BitmapFactory.Options();
             o.inSampleSize = 4;
             o.inPreferredConfig = Bitmap.Config.ARGB_8888;
-            Bitmap bm = BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
-            if (bm == null) throw new IllegalStateException("could not decode " + jpg.getName());
+            byte[] data = r.data;
+            r.data = null;
+            Bitmap bm = data != null ? BitmapFactory.decodeByteArray(data, 0, data.length, o)
+                    : BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
+            data = null;
+            if (bm == null) throw new IllegalStateException("could not decode the measurement JPEG");
+            if (jpg == null) jpg = new File("(callback data)");
             Shot s = new Shot();
             s.w = bm.getWidth(); s.h = bm.getHeight();
             s.px = new int[s.w * s.h];
