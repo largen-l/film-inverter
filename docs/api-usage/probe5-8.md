@@ -121,6 +121,14 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
 - 0.19: the log is buffered and appended (open, write, close) about once a second, never during a shot; shots use
   Recipe Lab's sequence; Menu > Circle shape (75-100 %, default 100: the 0.75 of 0.18 looked worse).
 
+## 0.20: reopen the camera after every shot
+
+- Owner: captures "worked before the GUI". Probe 4's log shows how: the owner left and re-entered live view (camera
+  released and opened again) before every capture, and each re-entered session saved its one shot (LTL00005, 06, 08).
+  The probe UI had that button; 0.12+ never leaves live view, so only the first shot of a session was saved.
+- 0.20: `shoot()` holds the shutter 2.5 s, releases it, closes the camera (`restoreCamera`) and opens live view again
+  (`startLive`), then finds the file. Cost: ~2 GammaTables per shot (watch for the old many-tables hang on exit).
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and

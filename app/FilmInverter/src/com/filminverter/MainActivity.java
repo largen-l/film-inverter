@@ -128,7 +128,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.19, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.20, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -1687,9 +1687,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private static final class ShotResult { File file; }
 
     /**
-     * One capture, run from a worker thread: takePicture on the UI thread, shutter held 2.5 s then released with
-     * live view restarted (Recipe Lab's multi-frame sequence), then the new file looked for by name in every DCIM
-     * folder (the app clock is wrong). Nothing is written to the card meanwhile (see out()).
+     * One capture, run from a worker thread: takePicture on the UI thread, shutter held 2.5 s and released, the camera
+     * closed and live view opened again (the only way this body saves the next shot), then the new file looked for by
+     * name in every DCIM folder (the app clock is wrong). Nothing is written to the card meanwhile (see out()).
      */
     private ShotResult shoot(long timeoutMs) throws Exception {
         if (cameraEx == null) throw new IllegalStateException("live view not running");
@@ -1704,14 +1704,18 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 out("  takePicture +" + (System.currentTimeMillis() - t0) + " ms");
             } catch (Throwable t) { fail[0] = t; err("takePicture", t); }
         } });
-        // Recipe Lab's sample run, which takes many frames in a row on these bodies: hold the shutter 2.5 s, then
-        // release it and restart live view together.
+        // Hold the shutter 2.5 s, release it, then close the camera and open live view again. On this body a
+        // live-view session saves only its first shot (every probe and app log since probe 4); the probe builds
+        // "worked" because the owner left and re-entered live view before each capture, which is what this does.
         ui.postDelayed(new Runnable() { public void run() {
             try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); }
-            try { if (cameraEx != null) cameraEx.getNormalCamera().startPreview(); } catch (Throwable t) { err("restart preview", t); }
-            out("  released, live view restarted +" + (System.currentTimeMillis() - t0) + " ms");
+            out("  released +" + (System.currentTimeMillis() - t0) + " ms");
         } }, 2500);
-        Thread.sleep(2800);                                         // the DCIM search starts once the shot is released
+        Thread.sleep(3000);
+        restoreCamera();
+        out("  camera closed +" + (System.currentTimeMillis() - t0) + " ms");
+        startLive();
+        out("  live view reopened +" + (System.currentTimeMillis() - t0) + " ms");
         if (fail[0] != null) throw new IllegalStateException("takePicture: " + fail[0].getMessage());
         long end = t0 + timeoutMs;
         while (System.currentTimeMillis() < end && r.file == null) {
@@ -1726,10 +1730,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         } else {
             out("  no new JPEG after " + timeoutMs + " ms; Android sees: " + dcimSummary());
         }
-        long wait = t0 + 2800 - System.currentTimeMillis();            // never hand back before live view is back
-        if (wait > 0) Thread.sleep(wait);
         return r;
     }
+
     /** JPEGs that are not plain negatives (positive captures, measurement shots): the engine skips them. */
     private void rememberSkip(String name) {
         try {
