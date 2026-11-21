@@ -62,7 +62,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private OverlayViews.Guides guides;
     private TextView modePill, framePill, basePill, wbPill, toast, menuBtn, valueLabel, logText;
     private OverlayViews.CaptureButton captureBtn;
-    private LinearLayout bar, chipRow, menuPanel;
+    private LinearLayout menuPanel;
     private ScrollView menuScroll;
     private ScrollView logScroll;
     private Slider slider;
@@ -127,9 +127,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themes = Theme.all(new File(card, "FILMINV/THEMES"), errs);
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
-        applyTheme();
         applyWindowFlip();
-        out("=== Film Inverter 0.15, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.16, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -159,117 +158,224 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     public void surfaceCreated(SurfaceHolder h) { surfaceReady = true; if (!live) startLiveAsync(); }
-    public void surfaceChanged(SurfaceHolder h, int f, int w, int ht) {}
+    public void surfaceChanged(SurfaceHolder h, int f, int w, int ht) { out("surface " + w + "x" + ht); }
     public void surfaceDestroyed(SurfaceHolder h) { surfaceReady = false; }
 
     // ================================================================== UI
+    // Eight layouts, one per UI concept (Theme.LAYOUTS). Coordinates are in the 640x480 space of the concept
+    // mockups and scaled to the screen. Switching theme rebuilds every view except the live view surface; all
+    // state lives in fields, so a rebuild only re-reads it (refreshRow / refreshPills / styleMenu).
     private int sp(float v) { return Math.round(v * themes.get(themeIdx).textScale); }
 
-    private TextView pill(String s) {
+    private FrameLayout root;
+    private String layout = "minimal";
+    private float sx = 1f, sy = 1f;
+    private int menuLeft = 12, menuBottom = 116, toastTop = 52;
+    private final List<View> rowBoxes = new ArrayList<View>();       // per row: what is highlighted / hidden
+    private final List<TextView> rowVals = new ArrayList<TextView>();  // per row: its value (layouts that list them)
+    private final OverlayViews.Dial[] dialFor = new OverlayViews.Dial[10];
+    private TextView rowTitle, ledText, shootText, baseMark, segNeg, segPos, enlTag;
+    private OverlayViews.Histogram histogram;
+    private volatile int[][] lastHist;
+    private volatile String lastHistName;
+
+    private static final String[] ROW_LONG = {"Black point", "White point", "Gamma", "Color temp", "Amber–blue",
+            "Green–magenta", "Aperture", "Shutter speed", "ISO", "Exposure comp."};
+    private static final String[] ROW_SHORT = {"BLK", "WHT", "GAM", "TEMP", "A–B", "G–M", "F/", "SHUT", "ISO", "EV"};
+
+    private final View.OnClickListener onMenu = new View.OnClickListener() { public void onClick(View v) { toggleMenu(); } };
+    private final View.OnClickListener onShoot = new View.OnClickListener() { public void onClick(View v) { onShutterAction(); } };
+    private final View.OnClickListener onMode = new View.OnClickListener() { public void onClick(View v) { togglePositive(); } };
+
+    private void togglePositive() {
+        if (busy || menuOpen) return;
+        positive = !positive;
+        requestCurve();
+        refreshPills();
+    }
+
+    private int X(float v) { return Math.round(v * sx); }
+    private int Y(float v) { return Math.round(v * sy); }
+
+    /** Adds v to the root at mockup coordinates; w/h of -1 (match parent) and -2 (wrap) are passed through. */
+    private <T extends View> T put(T v, float l, float t, float w, float h) {
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(w < 0 ? (int) w : X(w), h < 0 ? (int) h : Y(h),
+                Gravity.TOP | Gravity.LEFT);
+        lp.leftMargin = X(l);
+        lp.topMargin = Y(t);
+        root.addView(v, lp);
+        return v;
+    }
+
+    /** As put, anchored to the right edge (`r` from the right). */
+    private <T extends View> T putRight(T v, float r, float t, float w, float h) {
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(w < 0 ? (int) w : X(w), h < 0 ? (int) h : Y(h),
+                Gravity.TOP | Gravity.RIGHT);
+        lp.rightMargin = X(r);
+        lp.topMargin = Y(t);
+        root.addView(v, lp);
+        return v;
+    }
+
+    private LinearLayout.LayoutParams lp(float w, float h) {
+        return new LinearLayout.LayoutParams(w < 0 ? (int) w : X(w), h < 0 ? (int) h : Y(h));
+    }
+
+    private LinearLayout.LayoutParams lpw(float h, float weight) {
+        return new LinearLayout.LayoutParams(0, h < 0 ? (int) h : Y(h), weight);
+    }
+
+    private LinearLayout box(boolean vertical) {
+        LinearLayout b = new LinearLayout(this);
+        b.setOrientation(vertical ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        return b;
+    }
+
+    private View spacer() { return new View(this); }
+
+    private TextView text(String s, float size, int color, Typeface tf) {
         TextView t = new TextView(this);
         t.setText(s);
-        t.setTextSize(13);
-        t.setPadding(10, 4, 10, 4);
+        t.setTextSize(sp(size));
+        t.setTextColor(color);
+        if (tf != null) t.setTypeface(tf);
         return t;
     }
 
+    private TextView button(TextView t, View.OnClickListener l) {
+        t.setGravity(Gravity.CENTER);
+        t.setClickable(true);
+        t.setOnClickListener(l);
+        return t;
+    }
+
+    private void style(TextView t, float size, int color, Typeface tf, android.graphics.drawable.Drawable bg) {
+        t.setTextSize(sp(size));
+        t.setTextColor(color);
+        if (tf != null) t.setTypeface(tf);
+        t.setBackgroundDrawable(bg);
+    }
+
+    private GradientDrawable shape(int fill, int stroke, float radius) { return shape(fill, stroke, radius, 1); }
+
+    private GradientDrawable shape(int fill, int stroke, float radius, int strokeWidth) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        if (stroke != 0) d.setStroke(strokeWidth, stroke);
+        d.setCornerRadius(radius);
+        return d;
+    }
+
+    private static final Typeface MONO = Typeface.MONOSPACE, MONO_B = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD);
+    private static final Typeface COND = Typeface.create("sans-serif-condensed", Typeface.NORMAL);
+    private static final Typeface COND_B = Typeface.create("sans-serif-condensed", Typeface.BOLD);
+    private static final Typeface MARKER = Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC);
+    private static final Typeface BOLD = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD);
+
     private void buildUi() {
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         surface = new SurfaceView(this);
         surface.getHolder().addCallback(this);
         surface.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         root.addView(surface, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
+        android.view.Display d = getWindowManager().getDefaultDisplay();
+        int w = Math.max(d.getWidth(), d.getHeight()), h = Math.min(d.getWidth(), d.getHeight());
+        sx = w / 640f;
+        sy = h / 480f;
+        out("screen " + w + "x" + h);
+        buildOverlay();
+    }
 
-        guides = new OverlayViews.Guides(this);
-        guides.setVisibility(guidesOn ? View.VISIBLE : View.GONE);
-        root.addView(guides, new FrameLayout.LayoutParams(-1, -1));
+    /** Theme changed (or first start): rebuild every view but the live view surface in the theme's layout. */
+    private void applyTheme() { buildOverlay(); }
 
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setPadding(12, 12, 12, 0);
-        modePill = pill("POS"); framePill = pill("Live"); basePill = pill("Base: not set"); wbPill = pill("Camera WB");
-        top.addView(modePill);
-        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(-2, -2); gap.leftMargin = 8;
-        top.addView(framePill, gap);
-        expPill = pill("");
+    private void buildOverlay() {
+        Theme t = themes.get(themeIdx);
+        layout = t.layout;
+        CharSequence oldLog = logText == null ? "" : logText.getText();
+        while (root.getChildCount() > 1) root.removeViewAt(1);
+        chips.clear();
+        rowBoxes.clear();
+        rowVals.clear();
+        java.util.Arrays.fill(dialFor, null);
+        rowTitle = ledText = shootText = baseMark = segNeg = segPos = enlTag = null;
+        histogram = null;
+        makeCommon(t, oldLog);
+        if ("camera".equals(layout)) layoutCamera(t);
+        else if ("material".equals(layout)) layoutMaterial(t);
+        else if ("glass".equals(layout)) layoutGlass(t);
+        else if ("enlarger".equals(layout)) layoutEnlarger(t);
+        else if ("lighttable".equals(layout)) layoutLightTable(t);
+        else if ("scope".equals(layout)) layoutScope(t);
+        else if ("safelight".equals(layout)) layoutSafelight(t);
+        else layoutMinimal(t);
+
+        // on top in every layout: toast, menu, log
+        FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        tl.topMargin = Y(toastTop); tl.leftMargin = X(24); tl.rightMargin = X(24);
+        root.addView(toast, tl);
+        FrameLayout.LayoutParams ml = new FrameLayout.LayoutParams(X(300), -2, Gravity.BOTTOM | Gravity.LEFT);
+        ml.bottomMargin = Y(menuBottom); ml.leftMargin = X(menuLeft); ml.topMargin = Y(8);
+        root.addView(menuScroll, ml);
+        FrameLayout.LayoutParams ll = new FrameLayout.LayoutParams(-1, -1);
+        ll.bottomMargin = Y(112);
+        root.addView(logScroll, ll);
+
+        menuPanel.setBackgroundDrawable(shape(t.bar | 0xff000000, t.chipBorder, t.radius));
+        refreshRow();
+        refreshPills();
+        rebuildMenu();
+    }
+
+    /** Views every layout uses (attached or not); layouts place and style them. */
+    private void makeCommon(Theme t, CharSequence oldLog) {
+        modePill = text("POS", 13, t.pillText, null); framePill = text("Live", 13, t.pillText, null);
+        basePill = text("Base: not set", 13, t.pillText, null); wbPill = text("Camera WB", 13, t.pillText, null);
+        expPill = text("", 13, t.pillText, null);
         expPill.setVisibility(View.GONE);
-        LinearLayout.LayoutParams gap3 = new LinearLayout.LayoutParams(-2, -2); gap3.leftMargin = 8;
-        top.addView(expPill, gap3);
-        top.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
-        top.addView(basePill);
-        LinearLayout.LayoutParams gap2 = new LinearLayout.LayoutParams(-2, -2); gap2.leftMargin = 8;
-        top.addView(wbPill, gap2);
-        root.addView(top, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
-
-        toast = pill("");
+        toast = text("", 13, t.pillText, null);
+        for (TextView p : new TextView[]{modePill, framePill, basePill, wbPill, expPill, toast}) {
+            p.setPadding(X(10), Y(4), X(10), Y(4));
+            p.setBackgroundDrawable(shape(t.pill, 0, 14));
+        }
         toast.setVisibility(View.GONE);
         toast.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        tl.topMargin = 52; tl.leftMargin = 24; tl.rightMargin = 24;
-        root.addView(toast, tl);
+        toast.setBackgroundDrawable(shape(t.pill | 0xff000000, t.chipBorder, Math.min(14, t.radius + 4)));
 
-        // bottom bar: menu | chips + slider | capture
-        bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(16, 0, 16, 0);
-        menuBtn = new TextView(this);
-        menuBtn.setText("Menu");                    // plain text: the camera's Android 4.1 font may lack ☰
-        menuBtn.setTextSize(14);
-        menuBtn.setGravity(Gravity.CENTER);
+        menuBtn = button(text("Menu", 14, t.text, null), onMenu);
         menuBtn.setContentDescription("Menu");
-        menuBtn.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { toggleMenu(); } });
-        bar.addView(menuBtn, new LinearLayout.LayoutParams(64, 52));
 
-        LinearLayout mid = new LinearLayout(this);
-        mid.setOrientation(LinearLayout.VERTICAL);
-        mid.setPadding(14, 0, 14, 0);
-        chipRow = new LinearLayout(this);
-        chipRow.setOrientation(LinearLayout.HORIZONTAL);
         for (int i = 0; i < ROW_NAMES.length; i++) {
             final int r = i;
-            TextView c = new TextView(this);
-            c.setText(ROW_NAMES[i]);
-            c.setPadding(11, 6, 11, 6);
+            TextView c = text(ROW_NAMES[i], 13, t.textDim, null);
+            c.setPadding(X(11), Y(6), X(11), Y(6));
             c.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { selectRow(r); } });
-            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
-            cl.rightMargin = 6;
-            chipRow.addView(c, cl);
             chips.add(c);
+            rowBoxes.add(c);
+            rowVals.add(text("", 13, t.textDim, null));
         }
-        pageChip = new TextView(this);                      // switches color <-> exposure chips (Lens controls on)
-        pageChip.setPadding(11, 6, 11, 6);
+        pageChip = text("", 13, t.text, null);                  // color <-> exposure rows (Lens controls on)
+        pageChip.setPadding(X(11), Y(6), X(11), Y(6));
         pageChip.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
             selectRow(row >= ROW_EXP ? ROW_BLACK : ROW_EXP); } });
-        chipRow.addView(pageChip, new LinearLayout.LayoutParams(-2, -2));
-        mid.addView(chipRow);
-        LinearLayout sliderRow = new LinearLayout(this);
-        sliderRow.setOrientation(LinearLayout.HORIZONTAL);
-        sliderRow.setGravity(Gravity.CENTER_VERTICAL);
+
         slider = new Slider(this);
         slider.setListener(new Slider.Listener() {
             public void onValue(int v, boolean fromUser) { setRowFromSlider(v); }
             public void onReset() { resetRow(); }
         });
-        sliderRow.addView(slider, new LinearLayout.LayoutParams(0, 44, 1f));
-        valueLabel = new TextView(this);
+        slider.setColors(t.chipBorder, t.accent, t.text);
+        valueLabel = text("", 15, t.text, MONO);
         valueLabel.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        valueLabel.setTypeface(Typeface.MONOSPACE);
-        sliderRow.addView(valueLabel, new LinearLayout.LayoutParams(84, -2));
-        mid.addView(sliderRow);
-        bar.addView(mid, new LinearLayout.LayoutParams(0, -2, 1f));
-
         captureBtn = new OverlayViews.CaptureButton(this);
-        captureBtn.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { onShutterAction(); } });
-        bar.addView(captureBtn, new LinearLayout.LayoutParams(76, 76));
-        root.addView(bar, new FrameLayout.LayoutParams(-1, 112, Gravity.BOTTOM));
+        captureBtn.setOnClickListener(onShoot);
+        captureBtn.setColor(t.text);
 
-        // menu panel (right side, above the bar)
-        menuPanel = new LinearLayout(this);
-        menuPanel.setOrientation(LinearLayout.VERTICAL);
+        menuPanel = box(true);
         menuPanel.setPadding(8, 8, 8, 8);
-        // in a ScrollView: the menu is taller than the space above the bar; styleMenu keeps the cursor in view
+        // in a ScrollView: the menu is taller than the screen; styleMenu keeps the cursor in view
         menuScroll = new ScrollView(this);
         menuScroll.setVerticalScrollBarEnabled(true);
         // never take key focus: a focused ScrollView eats the d-pad (it scrolled instead of moving the cursor, 0.14)
@@ -277,10 +383,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         menuScroll.setFocusableInTouchMode(false);
         menuScroll.setDescendantFocusability(android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         menuScroll.addView(menuPanel, new FrameLayout.LayoutParams(-1, -2));
-        menuScroll.setVisibility(View.GONE);
-        FrameLayout.LayoutParams ml = new FrameLayout.LayoutParams(300, -2, Gravity.BOTTOM | Gravity.LEFT);
-        ml.bottomMargin = 116; ml.leftMargin = 12; ml.topMargin = 8;
-        root.addView(menuScroll, ml);
+        menuScroll.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
 
         logScroll = new ScrollView(this);
         logScroll.setFocusable(false);
@@ -290,61 +393,607 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         logText.setTextSize(11);
         logText.setTextColor(Color.WHITE);
         logText.setBackgroundColor(0xd8000000);
+        logText.setText(oldLog);
         logScroll.addView(logText);
         logScroll.setVisibility(View.GONE);
-        FrameLayout.LayoutParams ll = new FrameLayout.LayoutParams(-1, -1);
-        ll.bottomMargin = 112;
-        root.addView(logScroll, ll);
-
-        setContentView(root);
-        refreshRow();
-        rebuildMenu();
     }
 
-    private GradientDrawable shape(int fill, int stroke, float radius) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(fill);
-        if (stroke != 0) d.setStroke(1, stroke);
-        d.setCornerRadius(radius);
-        return d;
-    }
-
-    private void applyTheme() {
-        Theme t = themes.get(themeIdx);
-        bar.setBackgroundColor(t.bar);
-        for (TextView p : new TextView[]{modePill, framePill, expPill, basePill, wbPill, toast}) {
-            p.setTextColor(t.pillText);
-            p.setTextSize(sp(13));
-            p.setBackgroundDrawable(shape(t.pill, 0, 14));
+    /**
+     * Live view window (mockup coordinates): the surface is sized to it (if the camera scales its live view to the
+     * surface, the whole picture shows in the window; if not, the frame covers the edges) and an opaque frame
+     * covers the rest. Guides follow the window.
+     */
+    private OverlayViews.Mask window(Theme t, float l, float tp, float r, float b, float radius, int outer) {
+        FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(X(r - l), Y(b - tp), Gravity.TOP | Gravity.LEFT);
+        sl.leftMargin = X(l);
+        sl.topMargin = Y(tp);
+        surface.setLayoutParams(sl);
+        OverlayViews.Mask m = null;
+        if (l > 0 || tp > 0 || r < 640 || b < 480) {
+            m = new OverlayViews.Mask(this);
+            m.setWindow(outer, X(l), Y(tp), X(r), Y(b), radius);
+            root.addView(m, new FrameLayout.LayoutParams(-1, -1));
         }
-        menuBtn.setTextColor(t.text);
-        menuBtn.setBackgroundDrawable(shape(0, t.chipBorder, t.radius));
-        valueLabel.setTextColor(t.text);
-        valueLabel.setTextSize(sp(15));
-        slider.setColors(t.chipBorder, t.accent, t.text);
-        captureBtn.setColor(t.text);
+        guides = new OverlayViews.Guides(this);
         guides.setColor(t.accent);
-        menuPanel.setBackgroundDrawable(shape(t.bar, t.chipBorder, t.radius));
-        styleChips();
-        styleMenu();
+        guides.setVisibility(guidesOn ? View.VISIBLE : View.GONE);
+        put(guides, l, tp, r - l, b - tp);
+        out("layout " + layout + ": live view window " + X(l) + "," + Y(tp) + " " + X(r - l) + "x" + Y(b - tp));
+        return m;
     }
 
+    // ------------------------------------------------------------------ 1 Minimal: pills on top, one bottom bar
+    private void layoutMinimal(Theme t) {
+        window(t, 0, 0, 640, 480, 0, 0);
+        LinearLayout top = box(false);
+        top.setPadding(X(12), Y(12), X(12), 0);
+        top.addView(modePill);
+        LinearLayout.LayoutParams g = lp(-2, -2); g.leftMargin = X(8);
+        top.addView(framePill, g);
+        LinearLayout.LayoutParams g3 = lp(-2, -2); g3.leftMargin = X(8);
+        top.addView(expPill, g3);
+        top.addView(spacer(), lpw(1, 1f));
+        top.addView(basePill);
+        LinearLayout.LayoutParams g2 = lp(-2, -2); g2.leftMargin = X(8);
+        top.addView(wbPill, g2);
+        put(top, 0, 0, -1, -2);
+
+        LinearLayout bar = box(false);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(X(16), 0, X(16), 0);
+        bar.setBackgroundColor(t.bar);
+        menuBtn.setBackgroundDrawable(shape(0, t.chipBorder, t.radius));
+        bar.addView(menuBtn, lp(64, 52));
+        LinearLayout mid = box(true);
+        mid.setPadding(X(14), 0, X(14), 0);
+        LinearLayout chipRow = box(false);
+        for (TextView c : chips) { LinearLayout.LayoutParams cl = lp(-2, -2); cl.rightMargin = X(6); chipRow.addView(c, cl); }
+        chipRow.addView(pageChip, lp(-2, -2));
+        mid.addView(chipRow);
+        LinearLayout sliderRow = box(false);
+        sliderRow.setGravity(Gravity.CENTER_VERTICAL);
+        sliderRow.addView(slider, lpw(44, 1f));
+        sliderRow.addView(valueLabel, lp(84, -2));
+        mid.addView(sliderRow);
+        bar.addView(mid, lpw(-2, 1f));
+        bar.addView(captureBtn, lp(76, 76));
+        put(bar, 0, 368, -1, 112);
+        menuLeft = 12; menuBottom = 116; toastTop = 52;
+    }
+
+    // ------------------------------------------------------------------ 2 Camera: the camera's own menu style
+    private void layoutCamera(Theme t) {
+        window(t, 300, 0, 640, 480, 0, t.bar);
+        LinearLayout rail = box(true);                       // section rail: menu, mode, shutter
+        rail.setBackgroundColor(t.pill);
+        rail.setGravity(Gravity.CENTER_HORIZONTAL);
+        rail.setPadding(0, Y(8), 0, Y(8));
+        style(menuBtn, 13, t.text, COND_B, shape(0, t.chipBorder, t.radius));
+        rail.addView(menuBtn, lp(52, 52));
+        button(modePill, onMode);
+        modePill.setPadding(0, 0, 0, 0);
+        style(modePill, 15, t.onAccent, COND_B, shape(t.accent, 0, t.radius));
+        LinearLayout.LayoutParams mp = lp(52, 52); mp.topMargin = Y(6);
+        rail.addView(modePill, mp);
+        rail.addView(spacer(), new LinearLayout.LayoutParams(1, 0, 1f));
+        captureBtn.setStyle(OverlayViews.CaptureButton.RING, t.text, t.text, 0, 3);
+        rail.addView(captureBtn, lp(52, 52));
+        put(rail, 0, 0, 64, 480);
+
+        LinearLayout panel = box(true);
+        panel.setBackgroundColor(t.bar);
+        LinearLayout head = box(false);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(X(14), 0, X(14), 0);
+        head.addView(text("Develop", 17, t.text, COND_B));
+        head.addView(spacer(), lpw(1, 1f));
+        style(framePill, 14, t.textDim, COND, null);
+        framePill.setPadding(0, 0, 0, 0);
+        head.addView(framePill);
+        panel.addView(head, lp(-1, 44));
+        panel.addView(line(t.chipBorder), lp(-1, 1));
+        LinearLayout list = box(true);
+        for (int i = 0; i < chips.size(); i++) list.addView(listRow(t, i, 16, COND, 44, true), lp(-1, 44));
+        style(pageChip, 16, t.text, COND, null);
+        pageChip.setPadding(X(14), 0, X(14), 0);
+        pageChip.setGravity(Gravity.CENTER_VERTICAL);
+        list.addView(pageChip, lp(-1, 44));
+        panel.addView(list, new LinearLayout.LayoutParams(-1, 0, 1f));
+        panel.addView(line(t.chipBorder), lp(-1, 1));
+        LinearLayout foot = box(true);
+        foot.setPadding(X(6), Y(2), X(10), Y(6));
+        slider.setStyle(Slider.LINE);
+        foot.addView(slider, lp(-1, 40));
+        TextView hint = text("‹ › adjust  ·  up/down row  ·  center pos/neg", 12, t.textDim, COND);
+        hint.setPadding(X(8), 0, 0, 0);
+        foot.addView(hint);
+        panel.addView(foot, lp(-1, -2));
+        put(panel, 64, 0, 236, 480);
+
+        LinearLayout status = box(true);
+        status.addView(wbPill);
+        LinearLayout.LayoutParams sp1 = lp(-2, -2); sp1.topMargin = Y(6);
+        status.addView(expPill, sp1);
+        put(status, 312, 12, -2, -2);
+        menuLeft = 70; menuBottom = 8; toastTop = 52;
+    }
+
+    /** View.setRotation / setAlpha are API 11; the app compiles against API 10 and the a6500 runs API 16. */
+    private static void rotate(View v, float deg) {
+        try { View.class.getMethod("setRotation", float.class).invoke(v, deg); } catch (Throwable ignored) {}
+    }
+
+    private static void alpha(View v, float a) {
+        try { View.class.getMethod("setAlpha", float.class).invoke(v, a); } catch (Throwable ignored) {}
+    }
+
+    private View line(int color) { View v = new View(this); v.setBackgroundColor(color); return v; }
+
+    /** A list row: name (the row's chip) left, value right; tap selects. */
+    private LinearLayout listRow(Theme t, final int i, float size, Typeface tf, float height, boolean separator) {
+        LinearLayout r = box(false);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(X(14), 0, X(14), 0);
+        TextView name = chips.get(i), val = rowVals.get(i);
+        name.setText(ROW_LONG[i]);
+        name.setPadding(0, 0, 0, 0);
+        style(name, size, t.text, tf, null);
+        style(val, size, t.textDim, tf, null);
+        r.addView(name);
+        r.addView(spacer(), lpw(1, 1f));
+        r.addView(val);
+        r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { selectRow(i); } });
+        rowBoxes.set(i, r);
+        return r;
+    }
+
+    // ------------------------------------------------------------------ 3 Material: card + bottom sheet
+    private void layoutMaterial(Theme t) {
+        window(t, 12, 12, 628, 312, X(20), t.pill);
+        LinearLayout top = box(false);
+        for (TextView p : new TextView[]{modePill, framePill, expPill}) {
+            style(p, 13, t.text, null, shape(0xbf111414, 0, 8));
+            p.setPadding(X(12), Y(6), X(12), Y(6));
+            LinearLayout.LayoutParams g = lp(-2, -2); g.rightMargin = X(8);
+            top.addView(p, g);
+        }
+        put(top, 24, 24, -2, -2);
+        LinearLayout topR = box(false);
+        for (TextView p : new TextView[]{basePill, wbPill}) {
+            style(p, 13, t.text, null, shape(0xbf111414, 0, 8));
+            p.setPadding(X(12), Y(6), X(12), Y(6));
+            LinearLayout.LayoutParams g = lp(-2, -2); g.rightMargin = X(8);
+            topR.addView(p, g);
+        }
+        topR.addView(menuBtn, lp(44, 40));
+        style(menuBtn, 11, t.text, null, shape(0xbf111414, 0, 20));
+        putRight(topR, 24, 24, -2, -2);
+
+        LinearLayout sheet = box(true);
+        GradientDrawable sd = new GradientDrawable();
+        sd.setColor(t.bar);
+        float rr = X(28);
+        sd.setCornerRadii(new float[]{rr, rr, rr, rr, 0, 0, 0, 0});
+        sheet.setBackgroundDrawable(sd);
+        sheet.setPadding(X(20), Y(10), X(20), Y(14));
+        LinearLayout handleRow = box(false);
+        handleRow.setGravity(Gravity.CENTER_HORIZONTAL);
+        View handle = line(t.chipBorder);
+        handle.setBackgroundDrawable(shape(t.chipBorder, 0, 2));
+        handleRow.addView(handle, lp(32, 4));
+        sheet.addView(handleRow, lp(-1, -2));
+        LinearLayout chipRow = box(false);
+        for (TextView c : chips) {
+            c.setPadding(X(14), Y(6), X(14), Y(6));
+            LinearLayout.LayoutParams cl = lp(-2, -2); cl.rightMargin = X(8);
+            chipRow.addView(c, cl);
+        }
+        pageChip.setPadding(X(14), Y(6), X(14), Y(6));
+        chipRow.addView(pageChip, lp(-2, -2));
+        LinearLayout.LayoutParams crp = lp(-1, -2); crp.topMargin = Y(10);
+        sheet.addView(chipRow, crp);
+        LinearLayout row2 = box(false);
+        row2.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout col = box(true);
+        LinearLayout labels = box(false);
+        rowTitle = text("", 13, t.textDim, null);
+        labels.addView(rowTitle);
+        labels.addView(spacer(), lpw(1, 1f));
+        style(valueLabel, 13, t.textDim, null, null);
+        labels.addView(valueLabel);
+        labels.addView(text(" · double-tap to reset", 13, t.textDim, null));
+        col.addView(labels, lp(-1, -2));
+        slider.setStyle(Slider.THICK);
+        slider.setColors(0xff3f4947, t.accent, t.accent);
+        col.addView(slider, lp(-1, 36));
+        row2.addView(col, lpw(-2, 1f));
+        captureBtn.setStyle(OverlayViews.CaptureButton.SQUARE, t.accent, t.accent, t.onAccent, 0);
+        LinearLayout.LayoutParams cbp = lp(72, 72); cbp.leftMargin = X(16);
+        row2.addView(captureBtn, cbp);
+        LinearLayout.LayoutParams r2p = lp(-1, -2); r2p.topMargin = Y(8);
+        sheet.addView(row2, r2p);
+        put(sheet, 0, 312, 640, 168);
+        menuLeft = 12; menuBottom = 172; toastTop = 72;
+    }
+
+    // ------------------------------------------------------------------ 4 Glass: floating translucent controls
+    private void layoutGlass(Theme t) {
+        window(t, 0, 0, 640, 480, 0, 0);
+        int glass = t.bar, edge = 0x2effffff;
+        LinearLayout seg = box(false);
+        seg.setPadding(X(3), Y(3), X(3), Y(3));
+        seg.setBackgroundDrawable(shape(t.pill, edge, Y(20)));
+        segNeg = button(text("Negative", 14, t.text, null), new View.OnClickListener() { public void onClick(View v) { if (positive) togglePositive(); } });
+        segPos = button(text("Positive", 14, t.text, null), new View.OnClickListener() { public void onClick(View v) { if (!positive) togglePositive(); } });
+        segNeg.setPadding(X(16), 0, X(16), 0);
+        segPos.setPadding(X(16), 0, X(16), 0);
+        seg.addView(segNeg, lp(-2, 30));
+        seg.addView(segPos, lp(-2, 30));
+        FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        sl.topMargin = Y(14);
+        root.addView(seg, sl);
+
+        LinearLayout left = box(true);
+        for (TextView p : new TextView[]{framePill, wbPill, expPill}) {
+            style(p, 13, t.text, null, shape(t.pill, edge, Y(14)));
+            LinearLayout.LayoutParams g = lp(-2, -2); g.bottomMargin = Y(6);
+            left.addView(p, g);
+        }
+        put(left, 16, 16, -2, -2);
+        style(menuBtn, 11, t.text, null, shape(t.pill, edge, Y(20)));
+        putRight(menuBtn, 16, 14, 44, 40);
+
+        LinearLayout panel = box(true);
+        panel.setBackgroundDrawable(shape(glass, 0x29ffffff, X(24)));
+        panel.setPadding(X(16), Y(8), X(16), Y(6));
+        LinearLayout labels = box(false);
+        for (int i = 0; i < chips.size(); i++) {
+            TextView c = chips.get(i);
+            c.setText(ROW_NAMES[i].toUpperCase());
+            c.setPadding(0, 0, X(14), 0);
+            style(c, 13, 0xb3ffffff, BOLD, null);
+            labels.addView(c);
+        }
+        style(pageChip, 13, t.accent, BOLD, null);
+        pageChip.setPadding(0, 0, 0, 0);
+        labels.addView(pageChip);
+        panel.addView(labels, lp(-1, -2));
+        style(valueLabel, 22, t.text, BOLD, null);
+        valueLabel.setGravity(Gravity.CENTER);
+        panel.addView(valueLabel, lp(-1, -2));
+        slider.setStyle(Slider.RULER);
+        slider.setColors(0x8cffffff, t.accent, t.text);
+        panel.addView(slider, lp(-1, 22));
+        put(panel, 16, 368, 512, 96);
+        captureBtn.setStyle(OverlayViews.CaptureButton.RING, t.text, t.text, 0, 4);
+        put(captureBtn, 540, 376, 84, 84);
+        menuLeft = 16; menuBottom = 120; toastTop = 60;
+    }
+
+    // ------------------------------------------------------------------ 5 Enlarger: easel, filter dials, LED
+    private void layoutEnlarger(Theme t) {
+        int yellow = t.pillText, ink = t.pill;
+        OverlayViews.Mask m = window(t, 22, 16, 618, 276, 0, yellow);
+        if (m != null) m.setBand(yellow, 0, 0, 0, 0, OverlayViews.Mask.RULER, ink);
+        enlTag = text("", 13, yellow, COND_B);
+        enlTag.setPadding(X(8), Y(2), X(8), Y(2));
+        enlTag.setBackgroundColor(ink);
+        putRight(enlTag, 30, 248, -2, -2);
+        put(line(0xff8e9195), 0, 290, 640, 2);
+
+        LinearLayout panel = box(false);
+        panel.setBackgroundColor(t.bar);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(X(18), 0, X(18), 0);
+        int[][] knob = {{0xffb6ecf7, 0xff1e9bb8, 0xff0b4e5e}, {0xfffbf3a8, 0xffc9a417, 0xff7a6208}, {0xfff7b3d8, 0xffc2307f, 0xff6d1146}};
+        for (int k = 0; k < 3; k++) {
+            final int r = ROW_TEMP + k;
+            LinearLayout col = box(true);
+            col.setGravity(Gravity.CENTER_HORIZONTAL);
+            OverlayViews.Dial d = new OverlayViews.Dial(this, knob[k][0], knob[k][1], knob[k][2]);
+            d.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { selectRow(r); } });
+            dialFor[r] = d;
+            col.addView(d, lp(76, 76));
+            LinearLayout lab = box(false);
+            TextView name = chips.get(r), val = rowVals.get(r);
+            name.setText(ROW_SHORT[r] + " ");
+            name.setPadding(0, 0, 0, 0);
+            style(name, 14, t.text, COND_B, null);
+            style(val, 14, t.text, COND_B, null);
+            lab.addView(name);
+            lab.addView(val);
+            col.addView(lab);
+            LinearLayout.LayoutParams cp = lp(-2, -2); cp.rightMargin = X(12);
+            panel.addView(col, cp);
+        }
+        LinearLayout right = box(true);
+        ledText = text("", 26, t.accent, MONO_B);
+        ledText.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        ledText.setPadding(X(12), Y(2), X(12), Y(2));
+        ledText.setBackgroundDrawable(shape(0xff120806, 0xff4a4d51, 6, 3));
+        ledText.setShadowLayer(8, 0, 0, t.accent);
+        ledText.setClickable(true);
+        ledText.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            int[] order = lensControls ? new int[]{0, 1, 2, 6, 7, 8, 9} : new int[]{0, 1, 2};
+            int next = order[0];
+            for (int i = 0; i < order.length; i++) if (order[i] == row) next = order[(i + 1) % order.length];
+            selectRow(next); } });
+        right.addView(ledText, lp(-1, 50));
+        slider.setStyle(Slider.LINE);
+        slider.setColors(0xff6a6d71, t.accent, 0xffe6e6e6);
+        right.addView(slider, lp(-1, 36));
+        LinearLayout btns = box(false);
+        style(menuBtn, 15, 0xffe6e6e6, COND_B, shape(0xff3a3d40, t.chipBorder, 6, 2));
+        menuBtn.setText("MENU");
+        btns.addView(menuBtn, lpw(52, 1f));
+        shootText = button(text("EXPOSE", 17, t.onAccent, COND_B), onShoot);
+        shootText.setBackgroundDrawable(shape(0xffb0261d, 0xff5c1410, 6, 2));
+        LinearLayout.LayoutParams ep = lpw(52, 1.4f); ep.leftMargin = X(10);
+        btns.addView(shootText, ep);
+        LinearLayout.LayoutParams bp = lp(-1, -2); bp.topMargin = Y(4);
+        right.addView(btns, bp);
+        panel.addView(right, lpw(-2, 1f));
+        put(panel, 0, 292, 640, 188);
+        menuLeft = 12; menuBottom = 192; toastTop = 24;
+    }
+
+    // ------------------------------------------------------------------ 6 Light table: film strip, sticky notes
+    private void layoutLightTable(Theme t) {
+        OverlayViews.Mask m = window(t, 48, 48, 592, 268, 0, t.bar);
+        if (m != null) m.setBand(t.chipBorder, X(18), Y(26), X(18), Y(26), OverlayViews.Mask.SPROCKETS, 0xfffff9ef);
+        style(framePill, 12, t.textDim, MONO_B, null);
+        framePill.setPadding(0, 0, 0, 0);
+        put(framePill, 32, 3, -2, -2);
+        baseMark = text("", 22, t.accent, MARKER);
+        rotate(baseMark, -6);
+        put(baseMark, 470, 24, -2, -2);
+
+        LinearLayout notes = box(true);
+        LinearLayout row1 = box(false), row2 = box(false);
+        int[] r1 = {0, 1, 2, 6, 7}, r2 = {3, 4, 5, 8, 9};
+        float rot = -1.5f;
+        for (int k = 0; k < 2; k++) {
+            LinearLayout rowBox = k == 0 ? row1 : row2;
+            for (int i : (k == 0 ? r1 : r2)) {
+                LinearLayout n = note(t, i);
+                rotate(n, rot);
+                rot = -rot * 0.8f;
+                LinearLayout.LayoutParams np = lp(-2, -2); np.rightMargin = X(10);
+                rowBox.addView(n, np);
+            }
+        }
+        style(modePill, 17, t.text, MARKER, shape(t.pill, 0, 2));
+        modePill.setPadding(X(12), Y(6), X(12), Y(6));
+        button(modePill, onMode);
+        rotate(modePill, 1f);
+        row1.addView(modePill);
+        style(menuBtn, 17, t.text, MARKER, shape(t.pill, 0, 2));
+        menuBtn.setPadding(X(12), Y(6), X(12), Y(6));
+        menuBtn.setText("menu");
+        rotate(menuBtn, -1f);
+        row2.addView(menuBtn);
+        style(pageChip, 17, t.text, MARKER, shape(t.pill, 0, 2));
+        pageChip.setPadding(X(12), Y(6), X(12), Y(6));
+        LinearLayout.LayoutParams pp = lp(-2, -2); pp.leftMargin = X(10);
+        row2.addView(pageChip, pp);
+        notes.addView(row1);
+        LinearLayout.LayoutParams r2p = lp(-2, -2); r2p.topMargin = Y(8);
+        notes.addView(row2, r2p);
+        put(notes, 30, 306, 480, -2);
+
+        captureBtn.setStyle(OverlayViews.CaptureButton.LOUPE, t.chipBorder, 0xffeef2f4, t.chipBorder, X(6));
+        put(captureBtn, 522, 306, 88, 88);
+
+        LinearLayout strip = box(false);
+        strip.setBackgroundColor(t.chipBorder);
+        strip.setGravity(Gravity.CENTER_VERTICAL);
+        strip.setPadding(X(7), Y(4), X(12), Y(4));
+        slider.setStyle(Slider.LINE);
+        slider.setColors(0xff5a4a38, t.accent, 0xfffff9ef);
+        strip.addView(slider, lpw(-1, 1f));
+        style(valueLabel, 16, 0xfffff9ef, MONO_B, null);
+        strip.addView(valueLabel, lp(90, -2));
+        put(strip, 30, 406, 580, 58);
+        menuLeft = 30; menuBottom = 80; toastTop = 60;
+    }
+
+    /** A sticky note for a row: "black 791" in a marker hand; the selected one is circled in pencil (styleChips). */
+    private LinearLayout note(Theme t, final int i) {
+        LinearLayout n = box(false);
+        n.setPadding(X(10), Y(6), X(10), Y(6));
+        TextView name = chips.get(i), val = rowVals.get(i);
+        name.setText(ROW_NAMES[i].toLowerCase() + " ");
+        name.setPadding(0, 0, 0, 0);
+        style(name, 17, t.text, MARKER, null);
+        style(val, 17, t.text, MARKER, null);
+        n.addView(name);
+        n.addView(val);
+        n.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { selectRow(i); } });
+        name.setClickable(false);
+        rowBoxes.set(i, n);
+        return n;
+    }
+
+    // ------------------------------------------------------------------ 7 Scope: HUD, readout panel, histogram
+    private void layoutScope(Theme t) {
+        window(t, 0, 0, 460, 344, 0, t.bar);
+        LinearLayout hud = box(false);
+        for (TextView p : new TextView[]{modePill, framePill, expPill}) {
+            style(p, 12, t.accent, MONO, null);
+            p.setBackgroundColor(0xb3000000);
+            p.setPadding(X(6), Y(2), X(6), Y(2));
+            hud.addView(p);
+        }
+        put(hud, 8, 8, -2, -2);
+
+        put(line(t.chipBorder), 460, 0, 1, 344);
+        LinearLayout side = box(true);
+        side.setPadding(X(10), Y(8), X(10), Y(8));
+        side.addView(text("LEVELS (IN 0–1023)", 11, t.textDim, MONO));
+        for (int i = 0; i < 3; i++) side.addView(scopeRow(t, i), lp(-1, 22));
+        side.addView(text("COLOR", 11, t.textDim, MONO), topMargin(6));
+        for (int i = 3; i < 6; i++) side.addView(scopeRow(t, i), lp(-1, 22));
+        if (lensControls) {
+            side.addView(text("EXPOSURE", 11, t.textDim, MONO), topMargin(6));
+            for (int i = 6; i < 10; i++) side.addView(scopeRow(t, i), lp(-1, 22));
+        }
+        side.addView(text("BASE", 11, t.textDim, MONO), topMargin(6));
+        style(wbPill, 12, t.text, MONO, null);
+        wbPill.setPadding(0, 0, 0, 0);
+        side.addView(wbPill);
+        side.addView(spacer(), new LinearLayout.LayoutParams(1, 0, 1f));
+        slider.setStyle(Slider.FLAT);
+        slider.setColors(t.chipBorder, t.accent, t.accent);
+        side.addView(slider, lp(-1, 30));
+        put(side, 461, 0, 179, 344);
+
+        put(line(t.chipBorder), 0, 344, 640, 1);
+        histogram = new OverlayViews.Histogram(this);
+        histogram.setColors(0xff222222, t.textDim);
+        histogram.setBins(lastHist, lastHistName == null ? null : "LAST CAPTURE " + lastHistName + " · RGB");
+        put(histogram, 10, 354, 498, 116);
+        shootText = button(text("● REC", 16, t.text, MONO_B), onShoot);
+        shootText.setBackgroundDrawable(shape(0xff111111, t.text, 0, 2));
+        put(shootText, 518, 354, 112, 70);
+        style(menuBtn, 13, t.accent, MONO_B, shape(0, t.accent, 0, 1));
+        menuBtn.setText("MENU");
+        put(menuBtn, 518, 430, 112, 40);
+        menuLeft = 10; menuBottom = 140; toastTop = 40;
+    }
+
+    private LinearLayout.LayoutParams topMargin(float m) { LinearLayout.LayoutParams p = lp(-2, -2); p.topMargin = Y(m); return p; }
+
+    private LinearLayout scopeRow(Theme t, final int i) {
+        LinearLayout r = box(false);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = chips.get(i), val = rowVals.get(i);
+        name.setPadding(0, 0, 0, 0);
+        style(name, 13, t.text, MONO, null);
+        style(val, 13, t.text, MONO, null);
+        r.addView(name);
+        r.addView(spacer(), lpw(1, 1f));
+        r.addView(val);
+        r.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { selectRow(i); } });
+        rowBoxes.set(i, r);
+        return r;
+    }
+
+    // ------------------------------------------------------------------ 8 Safelight: huge targets, red only
+    private void layoutSafelight(Theme t) {
+        int red = t.accent;
+        window(t, 0, 0, 490, 384, 0, 0xff000000);
+        LinearLayout bottom = box(false);
+        bottom.setBackgroundColor(0xff000000);
+        bottom.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.setPadding(X(16), 0, X(16), 0);
+        TextView minus = button(text("−", 40, red, BOLD), new View.OnClickListener() { public void onClick(View v) { if (!menuOpen) stepRow(-1); } });
+        minus.setBackgroundDrawable(shape(0xff000000, red, X(14), 3));
+        bottom.addView(minus, lp(80, 72));
+        LinearLayout mid = box(true);
+        mid.setGravity(Gravity.CENTER);
+        rowTitle = text("", 15, red, BOLD);
+        rowTitle.setGravity(Gravity.CENTER);
+        mid.addView(rowTitle);
+        style(valueLabel, 40, red, BOLD, null);
+        valueLabel.setGravity(Gravity.CENTER);
+        valueLabel.setLongClickable(true);
+        valueLabel.setOnLongClickListener(new View.OnLongClickListener() { public boolean onLongClick(View v) { resetRow(); return true; } });
+        mid.addView(valueLabel);
+        bottom.addView(mid, lpw(-2, 1f));
+        TextView plus = button(text("+", 40, red, BOLD), new View.OnClickListener() { public void onClick(View v) { if (!menuOpen) stepRow(1); } });
+        plus.setBackgroundDrawable(shape(0xff000000, red, X(14), 3));
+        bottom.addView(plus, lp(80, 72));
+        put(bottom, 0, 384, 490, 96);
+
+        LinearLayout col = box(true);
+        col.setBackgroundColor(0xff000000);
+        col.setPadding(X(12), Y(14), X(14), Y(14));
+        TextView next = button(text("NEXT ROW", 18, red, BOLD), new View.OnClickListener() { public void onClick(View v) { selectRow(row + 1); } });
+        next.setBackgroundDrawable(shape(0xff000000, red, X(14), 3));
+        col.addView(next, lp(-1, 64));
+        button(modePill, onMode);
+        style(modePill, 18, red, BOLD, shape(0xff000000, red, X(14), 3));
+        LinearLayout.LayoutParams g1 = lp(-1, 64); g1.topMargin = Y(12);
+        col.addView(modePill, g1);
+        style(menuBtn, 18, red, BOLD, shape(0xff000000, red, X(14), 3));
+        menuBtn.setText("MENU");
+        LinearLayout.LayoutParams g2 = lp(-1, 64); g2.topMargin = Y(12);
+        col.addView(menuBtn, g2);
+        shootText = button(text("SHOOT", 22, 0xff000000, BOLD), onShoot);
+        shootText.setBackgroundDrawable(shape(red, 0, X(14)));
+        LinearLayout.LayoutParams g3 = new LinearLayout.LayoutParams(-1, 0, 1f); g3.topMargin = Y(12);
+        col.addView(shootText, g3);
+        put(col, 490, 0, 150, 480);
+        menuLeft = 12; menuBottom = 100; toastTop = 16;
+    }
+
+    /** Selection highlight per layout (and which rows show: the color page or, with Lens controls, exposure). */
     private void styleChips() {
         Theme t = themes.get(themeIdx);
         boolean expPage = row >= ROW_EXP;
         for (int i = 0; i < chips.size(); i++) {
-            TextView c = chips.get(i);
+            TextView c = chips.get(i), v = rowVals.get(i);
+            View box = rowBoxes.get(i);
             boolean sel = i == row;
-            c.setVisibility((i >= ROW_EXP) == expPage ? View.VISIBLE : View.GONE);
-            c.setTextSize(sp(13));
-            c.setTextColor(sel ? t.onAccent : t.textDim);
-            c.setBackgroundDrawable(sel ? shape(t.accent, 0, Math.min(8, t.radius)) : shape(0, t.chipBorder, Math.min(8, t.radius)));
+            boolean vis = "scope".equals(layout) ? (i < ROW_EXP || lensControls) : (i >= ROW_EXP) == expPage;
+            if ("enlarger".equals(layout)) vis = true;
+            box.setVisibility(vis ? View.VISIBLE : View.GONE);
+            if ("camera".equals(layout)) {
+                box.setBackgroundColor(sel ? t.accent : 0);
+                c.setTextColor(sel ? t.onAccent : t.text);
+                v.setTextColor(sel ? t.onAccent : t.textDim);
+                c.setTypeface(sel ? COND_B : COND);
+                v.setTypeface(sel ? COND_B : COND);
+            } else if ("glass".equals(layout)) {
+                c.setTextColor(sel ? t.accent : 0xb3ffffff);
+            } else if ("lighttable".equals(layout)) {
+                box.setBackgroundDrawable(shape(t.pill, sel ? t.accent : 0, 2, 3));
+            } else if ("scope".equals(layout)) {
+                c.setText((sel ? "› " : "  ") + ROW_SHORT[i]);
+                c.setTextColor(sel ? t.accent : t.text);
+                v.setTextColor(sel ? t.accent : t.text);
+            } else if ("enlarger".equals(layout)) {
+                c.setTextColor(sel ? 0xffb0261d : t.text);
+                v.setTextColor(sel ? 0xffb0261d : t.text);
+                if (dialFor[i] != null) dialFor[i].setSelected(sel, t.accent);
+            } else if (!"safelight".equals(layout)) {      // minimal, material: chips
+                float r = "material".equals(layout) ? 8 : Math.min(8, t.radius);
+                c.setTextSize(sp("material".equals(layout) ? 14 : 13));
+                c.setTextColor(sel ? t.onAccent : ("material".equals(layout) ? t.text : t.textDim));
+                c.setBackgroundDrawable(sel ? shape(t.accent, 0, r) : shape(0, t.chipBorder, r));
+            }
         }
-        pageChip.setVisibility(lensControls ? View.VISIBLE : View.GONE);
-        pageChip.setText(expPage ? "‹ Color" : "Exposure ›");
-        pageChip.setTextSize(sp(13));
-        pageChip.setTextColor(t.text);
-        pageChip.setBackgroundDrawable(shape(0, t.chipBorder, Math.min(8, t.radius)));
+        pageChip.setVisibility(lensControls && !"scope".equals(layout) ? View.VISIBLE : View.GONE);
+        pageChip.setText("lighttable".equals(layout) ? (expPage ? "‹ color" : "exposure ›") : expPage ? "‹ Color" : "Exposure ›");
+        if ("minimal".equals(layout) || "material".equals(layout)) {
+            pageChip.setTextSize(sp(13));
+            pageChip.setTextColor(t.text);
+            pageChip.setBackgroundDrawable(shape(0, t.chipBorder, "material".equals(layout) ? 8 : Math.min(8, t.radius)));
+        }
+    }
+
+    /** RGB histogram (64 bins) of a capture, for the Scope layout. Worker thread. */
+    private void updateHistogram(File jpg) {
+        if (!"scope".equals(layout) || jpg == null) return;
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
+            o.inJustDecodeBounds = false;
+            o.inSampleSize = Math.max(1, o.outWidth / 320);
+            Bitmap bm = BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
+            if (bm == null) return;
+            int w = bm.getWidth(), h = bm.getHeight();
+            int[] px = new int[w * h];
+            bm.getPixels(px, 0, w, 0, 0, w, h);
+            bm.recycle();
+            int[][] b = new int[3][64];
+            for (int c : px) { b[0][((c >> 16) & 255) >> 2]++; b[1][((c >> 8) & 255) >> 2]++; b[2][(c & 255) >> 2]++; }
+            lastHist = b;
+            lastHistName = jpg.getName();
+            ui.post(new Runnable() { public void run() {
+                if (histogram != null) histogram.setBins(lastHist, "LAST CAPTURE " + lastHistName + " · RGB"); } });
+        } catch (Throwable t) { err("histogram", t); }
     }
 
     private int rowCount() { return lensControls ? ROW_NAMES.length : ROW_EXP; }
@@ -373,6 +1022,20 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 captureBtn.setBusy(capturing || busy);
                 expPill.setVisibility(lensControls && live ? View.VISIBLE : View.GONE);
                 if (lensControls) expPill.setText(exposure.summary());
+                // layout-specific status
+                if (segPos != null) {
+                    Theme t = themes.get(themeIdx);
+                    segPos.setBackgroundDrawable(positive ? shape(0xebffffff, 0, Y(15)) : null);
+                    segPos.setTextColor(positive ? 0xff111111 : 0xd9ffffff);
+                    segNeg.setBackgroundDrawable(positive ? null : shape(0xebffffff, 0, Y(15)));
+                    segNeg.setTextColor(positive ? 0xd9ffffff : 0xff111111);
+                }
+                if (baseMark != null) baseMark.setText(wbActive ? "base set" : "no base");
+                if (enlTag != null) enlTag.setText((positive ? "POSITIVE" : "NEGATIVE") + " · " + framePill.getText().toString().toUpperCase());
+                if (shootText != null) {
+                    alpha(shootText, capturing || busy ? 0.5f : 1f);
+                    if ("safelight".equals(layout)) shootText.setText(capturing ? "SAVING" : busy ? "WORKING" : "SHOOT");
+                }
             }
         });
     }
@@ -391,8 +1054,10 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         refreshRow();
     }
 
-    private String rowValue() {
-        if (row >= ROW_EXP) return exposure.label(row - ROW_EXP);
+    private String rowValue() { return rowValue(row); }
+
+    private String rowValue(int row) {
+        if (row >= ROW_EXP) { try { return exposure.label(row - ROW_EXP); } catch (Throwable t) { return "–"; } }
         switch (row) {
             case ROW_BLACK: return String.valueOf(inHi);
             case ROW_WHITE: return String.valueOf(inLo);
@@ -403,7 +1068,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         }
     }
 
-    private int[] sliderRange() {   // {max, value}
+    private int[] sliderRange() { return sliderRange(row); }
+
+    private int[] sliderRange(int row) {   // {max, value}
         if (row >= ROW_EXP) return exposure.range(row - ROW_EXP);
         switch (row) {
             case ROW_BLACK: return new int[]{127, inHi / 8};
@@ -422,10 +1089,21 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             public void run() {
                 slider.setRange(r[0], r[1]);
                 valueLabel.setText(v);
+                refreshRowValues();
                 styleChips();
             }
         });
         refreshPills();
+    }
+
+    /** Every row's value where the layout lists them, the dials, the LED and the row title. UI thread. */
+    private void refreshRowValues() {
+        for (int i = 0; i < rowVals.size(); i++) {
+            rowVals.get(i).setText(rowValue(i));
+            if (dialFor[i] != null) { int[] r = sliderRange(i); dialFor[i].setFraction(r[1] / (float) Math.max(1, r[0])); }
+        }
+        if (ledText != null) ledText.setText(ROW_SHORT[row] + " " + rowValue());
+        if (rowTitle != null) rowTitle.setText("safelight".equals(layout) ? ROW_LONG[row].toUpperCase() : ROW_LONG[row]);
     }
 
     private void setRowFromSlider(int p) {
@@ -439,7 +1117,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             case ROW_AB: shiftAB = p - 32; applyWb(); break;
             default: shiftGM = p - 32; applyWb(); break;
         }
-        ui.post(new Runnable() { public void run() { valueLabel.setText(rowValue()); } });
+        ui.post(new Runnable() { public void run() { valueLabel.setText(rowValue()); refreshRowValues(); } });
         refreshPills();
     }
 
@@ -502,7 +1180,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 exposure.detach();
                 if (row >= ROW_EXP) row = ROW_BLACK;
             }
-            refreshRow(); } });
+            if ("scope".equals(layout)) buildOverlay(); else refreshRow(); } });   // Scope lists the exposure rows
         addMenu("Theme: " + themes.get(themeIdx).name, new Action() { public void run() {
             themeIdx = (themeIdx + 1) % themes.size(); savePrefs(); applyTheme();
             showToast("Theme " + themes.get(themeIdx).name + " (" + themes.get(themeIdx).source + ")"); } });
@@ -571,7 +1249,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         if (isMenuOrBack(scan) || keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_BACK) { toggleMenu(); return true; }
         if (isEnter(scan) || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
             if (menuOpen) activateMenu();
-            else if (!busy) { positive = !positive; requestCurve(); refreshPills(); }
+            else togglePositive();
             return true;
         }
         if (isShutter(scan)) { onShutterAction(); return true; }
@@ -857,6 +1535,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 ShotResult r = shoot(30000);
                 out("JPEG from capture: " + (r.file == null ? "none (RAW only?)" : r.file.getName()));
                 if (pos && r.file != null) rememberSkip(r.file.getName());
+                updateHistogram(r.file);
                 showToast(r.file == null ? (r.shutter ? "Captured (no JPEG found)" : "Capture failed: the shutter did not fire")
                         : "Captured " + r.file.getName());
             } catch (Throwable t) {

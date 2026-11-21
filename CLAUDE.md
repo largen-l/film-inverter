@@ -71,7 +71,7 @@ Done:
   is always logged at start. Untested on the camera (owner has no electronic lens on it yet).
 - Ideas from other tools (NLP roll analysis, darktable negadoctor Dmin from border, NegPy auto-crop, FilmLab
   delayed shutter, Nikon D850 negative mode) are reflected above; still open: roll-level analysis across frames,
-  B&W mode, XMP crop sidecars for Lightroom, full theme layouts (only palettes so far).
+  B&W mode, XMP crop sidecars for Lightroom.
 - **Linux/macOS** go through the same tool (toolchain-linux/ or toolchain-macos/; PMCA-RE from source in a venv
   on Linux, its Intel binary on macOS). Only CI has run them; camera USB on them is untested. WSL2 can't start
   on this PC (Proxmox VM without nested virtualization); the owner can provide SSH to a Linux VM/LXC.

@@ -191,6 +191,10 @@ class App:
         self.tname = tk.StringVar()
         self.tname.trace_add("write", lambda *a: self.render_theme())
         ttk.Entry(left, textvariable=self.tname, width=22).pack(anchor="w")
+        ttk.Label(left, text="Layout").pack(anchor="w", pady=(10, 0))
+        self.tlayout = ttk.Combobox(left, state="readonly", values=themes.LAYOUTS, width=18)
+        self.tlayout.bind("<<ComboboxSelected>>", lambda e: self.render_theme())
+        self.tlayout.pack(anchor="w")
 
         self.swatches = {}
         self.alphas = {}
@@ -218,13 +222,14 @@ class App:
 
         self.canvas = tk.Canvas(right, width=640, height=480, highlightthickness=0, bg="#000")
         self.canvas.pack(anchor="nw")
-        ttk.Label(right, foreground="#555", text="Preview of the camera screen (640×480). Files are saved with an 8.3 name, "
-                  "which the camera requires.").pack(anchor="w", pady=4)
+        ttk.Label(right, foreground="#555", text="Color preview on the Minimal layout (640×480); on the camera the theme "
+                  "uses its own layout. Files are saved with an 8.3 name, which the camera requires.").pack(anchor="w", pady=4)
         self.load_theme(dict(themes.BUILTINS[0], name="My theme"))
 
     def load_theme(self, t: dict):
         self.theme = t
         self.tname.set(t["name"])
+        self.tlayout.set(t.get("layout", "minimal"))
         for k, _ in themes.KEYS:
             r, g, b, a = themes.parse_color(t[k])
             self.alphas[k].set(a)
@@ -250,6 +255,7 @@ class App:
     def _current(self) -> dict:
         t = dict(self.theme)
         t["name"] = self.tname.get().strip() or "Untitled"
+        t["layout"] = self.tlayout.get() or "minimal"
         t["radius"] = int(self.radius.get())
         t["textScale"] = int(self.tscale.get()) / 100
         return t

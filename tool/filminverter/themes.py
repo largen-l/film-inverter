@@ -1,4 +1,4 @@
-"""Camera UI themes: the built-in palettes (keep in sync with Theme.builtIns() in the app), validation,
+"""Camera UI themes: the built-in layouts and palettes (keep in sync with Theme.builtIns() in the app), validation,
 8.3 file names, and writing .JSN files to the card's FILMINV/THEMES folder."""
 from __future__ import annotations
 
@@ -10,15 +10,17 @@ from typing import Dict, List
 KEYS = [("accent", "Accent"), ("onAccent", "Text on accent"), ("text", "Text"), ("textDim", "Dim text"),
         ("bar", "Bottom bar"), ("pill", "Status pills"), ("pillText", "Pill text"), ("chipBorder", "Borders / track")]
 
+LAYOUTS = ["minimal", "camera", "material", "glass", "enlarger", "lighttable", "scope", "safelight"]
+
 BUILTINS: List[Dict] = [
-    {"name": "Minimal", "accent": "#f2c14e", "onAccent": "#0b0b0b", "text": "#f2f2f2", "textDim": "#b8b8b8", "bar": "#c7080808", "pill": "#8c000000", "pillText": "#f2f2f2", "chipBorder": "#3a3a3a", "radius": 12},
-    {"name": "Camera", "accent": "#ff8a3d", "onAccent": "#000000", "text": "#ececec", "textDim": "#bdbdbd", "bar": "#eb000000", "pill": "#cc141414", "pillText": "#ececec", "chipBorder": "#3a3a3a", "radius": 4},
-    {"name": "Material", "accent": "#82d5c8", "onAccent": "#00201b", "text": "#e3e3e3", "textDim": "#bec9c6", "bar": "#f01d2321", "pill": "#bf111414", "pillText": "#e3e3e3", "chipBorder": "#5b6563", "radius": 20},
-    {"name": "Glass", "accent": "#ffd60a", "onAccent": "#111111", "text": "#ffffff", "textDim": "#d0d0d0", "bar": "#9e1c1c1e", "pill": "#8c1e1e1e", "pillText": "#ffffff", "chipBorder": "#4dffffff", "radius": 24},
-    {"name": "Enlarger", "accent": "#d1352b", "onAccent": "#fff3f1", "text": "#1e1e1e", "textDim": "#3a3a3a", "bar": "#f0bfc2c5", "pill": "#cc2c2a26", "pillText": "#e9c84a", "chipBorder": "#5a5d61", "radius": 6},
-    {"name": "Light table", "accent": "#d1242f", "onAccent": "#ffffff", "text": "#1d1d1d", "textDim": "#4a4a4a", "bar": "#f0f4f6f7", "pill": "#e6f3e3b5", "pillText": "#1d1d1d", "chipBorder": "#2a2118", "radius": 3},
-    {"name": "Scope", "accent": "#52e08a", "onAccent": "#050505", "text": "#d9d9d9", "textDim": "#8a8a8a", "bar": "#f0050505", "pill": "#b3000000", "pillText": "#52e08a", "chipBorder": "#2c2c2c", "radius": 0},
-    {"name": "Safelight", "accent": "#ff4a3d", "onAccent": "#000000", "text": "#ff4a3d", "textDim": "#c0392b", "bar": "#ff000000", "pill": "#ff000000", "pillText": "#ff4a3d", "chipBorder": "#ff4a3d", "radius": 14},
+    {"name": "Minimal", "layout": "minimal", "accent": "#f2c14e", "onAccent": "#0b0b0b", "text": "#f2f2f2", "textDim": "#b8b8b8", "bar": "#c7080808", "pill": "#8c000000", "pillText": "#f2f2f2", "chipBorder": "#3a3a3a", "radius": 12},
+    {"name": "Camera", "layout": "camera", "accent": "#ff8a3d", "onAccent": "#000000", "text": "#ececec", "textDim": "#bdbdbd", "bar": "#ff000000", "pill": "#ff141414", "pillText": "#ececec", "chipBorder": "#2a2a2a", "radius": 6},
+    {"name": "Material", "layout": "material", "accent": "#82d5c8", "onAccent": "#00201b", "text": "#e3e3e3", "textDim": "#bec9c6", "bar": "#ff1d2321", "pill": "#ff111414", "pillText": "#e3e3e3", "chipBorder": "#5b6563", "radius": 20},
+    {"name": "Glass", "layout": "glass", "accent": "#ffd60a", "onAccent": "#111111", "text": "#ffffff", "textDim": "#d0d0d0", "bar": "#9e1c1c1e", "pill": "#8c1e1e1e", "pillText": "#ffffff", "chipBorder": "#4dffffff", "radius": 24},
+    {"name": "Enlarger", "layout": "enlarger", "accent": "#ff3b2e", "onAccent": "#fff3f1", "text": "#2b2b2b", "textDim": "#3a3a3a", "bar": "#ffbfc2c5", "pill": "#ff2c2a26", "pillText": "#e9c84a", "chipBorder": "#5a5d61", "radius": 6},
+    {"name": "Light table", "layout": "lighttable", "accent": "#d1242f", "onAccent": "#ffffff", "text": "#1d1d1d", "textDim": "#4a4a4a", "bar": "#fff4f6f7", "pill": "#fff3e3b5", "pillText": "#e8a44a", "chipBorder": "#2a2118", "radius": 3},
+    {"name": "Scope", "layout": "scope", "accent": "#52e08a", "onAccent": "#050505", "text": "#d9d9d9", "textDim": "#8a8a8a", "bar": "#ff050505", "pill": "#b3000000", "pillText": "#52e08a", "chipBorder": "#2c2c2c", "radius": 0},
+    {"name": "Safelight", "layout": "safelight", "accent": "#ff4a3d", "onAccent": "#000000", "text": "#ff4a3d", "textDim": "#c0392b", "bar": "#ff000000", "pill": "#ff000000", "pillText": "#ff4a3d", "chipBorder": "#ff4a3d", "radius": 14},
 ]
 
 _COLOR = re.compile(r"^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
@@ -48,6 +50,8 @@ def validate(t: Dict) -> List[str]:
                 parse_color(t[k])
             except ValueError as e:
                 errs.append(f"{k}: {e}")
+    if t.get("layout", "minimal") not in LAYOUTS:
+        errs.append("layout must be one of " + ", ".join(LAYOUTS))
     if not 0 <= int(t.get("radius", 12)) <= 40:
         errs.append("radius must be 0-40")
     if not 0.7 <= float(t.get("textScale", 1.0)) <= 1.6:
@@ -62,7 +66,7 @@ def file_name(name: str) -> str:
 
 
 def to_json(t: Dict) -> str:
-    out = {"name": t["name"]}
+    out = {"name": t["name"], "layout": t.get("layout", "minimal")}
     for k, _ in KEYS:
         if k in t:
             out[k] = t[k]
@@ -73,7 +77,7 @@ def to_json(t: Dict) -> str:
 
 def load(path: Path) -> Dict:
     t = json.loads(Path(path).read_text(encoding="utf-8"))
-    base = dict(BUILTINS[0])
+    base = dict(next((b for b in BUILTINS if b["layout"] == t.get("layout", "minimal")), BUILTINS[0]))
     base.update(t)
     errs = validate(base)
     if errs:
