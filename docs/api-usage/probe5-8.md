@@ -129,6 +129,20 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
 - 0.20: `shoot()` holds the shutter 2.5 s, releases it, closes the camera (`restoreCamera`) and opens live view again
   (`startLive`), then finds the file. Cost: ~2 GammaTables per shot (watch for the old many-tables hang on exit).
 
+## 0.20 session → 0.21: every shot saved
+
+- **Fixed:** all 16 shots of the session saved (3 captures, 12 measurement shots, 1 capture), each ~5.7 s from
+  takePicture to file, live view back after ~4.8 s. Exit was clean (no hang) after ~30 reopens.
+- Calibration 1 (from 2800 K) converged in one step: 2800 K, G–M −1, base codes 180/182/181. Its measured slopes
+  (d ln(R/G), d ln(B/G) per mired: −0.0031 / 0.0031; per G–M step: 0.0648 / 0.0503) are now built in.
+- Calibration 2 (after Reset roll, so from the camera's 5500 K) learned its slopes with red near clipping and swung
+  2500 K → 7600 K → 2600 K/G6, ending "super pink" (base codes 137/188/171). Auto levels can't fix a color cast.
+- 0.21: calibration starts at the last good result (else 2800 K), uses the built-in slopes (Broyden-updated), limits
+  each step to 40 mired / 6 G–M, rejects clipped or worse shots and ends on the best: usually 2 shots, at most 4.
+  Measurement shots are small JPEG-only again (with a fallback to the camera's format if one fails to save), listed in
+  `FILMINV/MEASURE.TXT`. Positive captures are listed in `FILMINV/POSITIVE.TXT` for the new **Review captures** screen.
+- Circle shape: owner picked **80 %** (now the default).
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and

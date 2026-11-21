@@ -184,6 +184,31 @@ final class OverlayViews {
         }
     }
 
+    /** One picture fitted to the view on black (Review captures), drawn PA times narrower so it keeps its shape. */
+    static final class Photo extends View {
+        private final Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final RectF r = new RectF();
+        private android.graphics.Bitmap bm;
+
+        Photo(Context c) { super(c); setBackgroundColor(0xff000000); }
+
+        void setBitmap(android.graphics.Bitmap b) {
+            if (bm != null && bm != b) bm.recycle();
+            bm = b;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            if (bm == null) return;
+            float pa = MainActivity.PA, w = getWidth(), h = getHeight();
+            float s = Math.min(w / (bm.getWidth() * pa), h / (float) bm.getHeight());
+            float dw = bm.getWidth() * s * pa, dh = bm.getHeight() * s;
+            r.set((w - dw) / 2f, (h - dh) / 2f, (w + dw) / 2f, (h + dh) / 2f);
+            c.drawBitmap(bm, null, r, p);
+        }
+    }
+
     /** RGB histogram of the last capture (Scope layout), three translucent filled curves. */
     static final class Histogram extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);

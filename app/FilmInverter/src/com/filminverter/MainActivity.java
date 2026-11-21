@@ -42,11 +42,13 @@ import java.util.Map;
  * Opens straight into inverted live view (hardware tone curve, see docs/api-usage/probe3.md).
  *   Chips / UP-DOWN: choose Black, White, Gamma, Temp, A–B, G–M.  Slider / LEFT-RIGHT / dials: change it.
  *   Double-tap the slider: reset.  CENTER: positive <-> negative.  SHUTTER / round button: capture.
- *   MENU / ☰: menu (calibrate base, auto levels, alignment check, guides, delay, silent shutter, theme, flip,
- *   develop newest frame, lens controls, log, reset roll, exit). In the menu UP/DOWN move, CENTER selects, MENU closes.
+ *   MENU / ☰: menu (calibrate base, auto levels, alignment check, review captures, guides, delay, silent shutter,
+ *   theme, flip, develop newest frame, lens controls, log, reset roll, exit). In the menu UP/DOWN move, CENTER
+ *   selects, MENU closes. PLAYBACK (if the camera passes it on) or Menu › Review captures: browse the positives.
  *
- * Measurements (calibration, auto levels, alignment) take small JPEG-only captures with a plain curve
- * (3008x2000, quality 25), read them back and adjust the camera: the camera gives apps no live-view frames.
+ * Measurements (calibration, auto levels, alignment) take small JPEG-only captures with a plain curve (smallest
+ * 3:2 size), read them back and adjust the camera: the camera gives apps no live-view frames. They are listed in
+ * FILMINV/MEASURE.TXT. Every shot closes and reopens the camera (one saved shot per live-view session, 0.20).
  * Every camera setting touched is saved first and restored (and read back) when the app pauses or exits.
  * Hard-won rules kept from the probes: two reused GammaTables per session (more hung the camera), release the
  * shutter after takePicture, 8.3 file names only, hand the screen back in normal landscape on exit.
@@ -128,7 +130,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.20, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.21, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -176,7 +178,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private String layout = "minimal";
     private float sx = 1f, sy = 1f;
     static float PA = 1f;                                          // pixel aspect correction (see above), Menu > Circle shape
-    private int aspectPct = 100;
+    private int aspectPct = 80;
+    private int calTemp, calGm;                                    // last good base calibration (start point of the next)
+    // Review captures: full-screen viewer over the live view (Menu › Review captures, or the playback button)
+    private boolean reviewOpen;
+    private final List<File> reviewFiles = new ArrayList<File>();
+    private int reviewIdx, reviewSeq;
+    private OverlayViews.Photo reviewPhoto;
+    private TextView reviewCaption;
     private float picL = 50, picR = 590;                             // the picture's x range in mockup space
     private int menuLeft = 12, menuBottom = 116, toastTop = 52;
     private final List<View> rowBoxes = new ArrayList<View>();       // per row: what is highlighted / hidden
@@ -234,6 +243,13 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent e) {
         int a = e.getAction() & android.view.MotionEvent.ACTION_MASK;
+        if (reviewOpen) {                                   // left third: previous, right third: next, middle: close
+            if (a == android.view.MotionEvent.ACTION_UP) {
+                float w = root.getWidth(), x = e.getX();        // the window itself is rotated by Flip
+                if (x < w / 3f) reviewStep(-1); else if (x > w * 2f / 3f) reviewStep(+1); else closeReview();
+            }
+            return true;
+        }
         if (a == android.view.MotionEvent.ACTION_DOWN && !chromeShown) swallowTouch = true;
         poke();
         if (swallowTouch) {
@@ -1256,6 +1272,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         addMenu("Calibrate film base", new Action() { public void run() { runAsync(new Runnable() { public void run() { calibrateBase(); } }); } });
         addMenu("Auto levels (this frame)", new Action() { public void run() { runAsync(new Runnable() { public void run() { autoLevels(); } }); } });
         addMenu("Check alignment", new Action() { public void run() { runAsync(new Runnable() { public void run() { checkAlignment(); } }); } });
+        addMenu("Review captures", new Action() { public void run() {
+            if (capturing || busy) showToast("Busy, try again in a moment"); else openReview(); } });
         addMenu("Guides: " + (guidesOn ? "on" : "off"), new Action() { public void run() {
             guidesOn = !guidesOn; guides.setVisibility(guidesOn ? View.VISIBLE : View.GONE); savePrefs(); } });
         addMenu("Capture delay: " + delaySec + " s", new Action() { public void run() { delaySec = delaySec == 0 ? 2 : 0; savePrefs(); } });
@@ -1344,6 +1362,20 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     public boolean onKeyDown(int keyCode, KeyEvent e) {
         poke();
         int scan = e.getScanCode();
+        boolean play = scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_PLAY;
+        if (reviewOpen) {
+            boolean fwd = isNext(scan) || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_DOWN;
+            boolean back = isPrev(scan) || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_UP;
+            boolean arrow = scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_RIGHT || scan == com.sony.scalar.sysutil.ScalarInput.ISV_KEY_LEFT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_LEFT;
+            if (flipMode == 1 && arrow) { boolean f = fwd; fwd = back; back = f; }   // the four-way keys follow the flipped screen
+            if (fwd) reviewStep(+1);
+            else if (back) reviewStep(-1);
+            else if (isHalfPress(scan)) return true;
+            else closeReview();
+            return true;
+        }
+        if (play) { if (!menuOpen && !capturing && !busy) openReview(); return true; }
         if (isMenuOrBack(scan) || keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_BACK) { toggleMenu(); return true; }
         if (isEnter(scan) || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
             if (menuOpen) activateMenu();
@@ -1420,7 +1452,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             themeIdx = p.getInt("theme", 0);
             lensControls = p.getBoolean("lens", false);
             autoHide = p.getBoolean("autohide", true);
-            aspectPct = p.getInt("aspect", 100);
+            aspectPct = p.getInt("aspect2", 80);                       // owner: 80% looks round (0.20)
+            calTemp = p.getInt("calTemp", 0);
+            calGm = p.getInt("calGm", 0);
         } catch (Throwable ignored) {}
     }
 
@@ -1428,7 +1462,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try {
             getSharedPreferences("fi", MODE_PRIVATE).edit().putInt("flip2", flipMode).putBoolean("guides", guidesOn)
                     .putInt("delay", delaySec).putBoolean("silent", silent).putInt("theme", themeIdx)
-                    .putBoolean("lens", lensControls).putBoolean("autohide", autoHide).putInt("aspect", aspectPct).commit();
+                    .putBoolean("lens", lensControls).putBoolean("autohide", autoHide).putInt("aspect2", aspectPct)
+                    .putInt("calTemp", calTemp).putInt("calGm", calGm).commit();
         } catch (Throwable ignored) {}
     }
 
@@ -1640,7 +1675,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             try {
                 ShotResult r = shoot(15000);
                 out("JPEG from capture: " + (r.file == null ? "none (RAW only?)" : r.file.getName()));
-                if (pos && r.file != null) rememberSkip(r.file.getName());
+                if (pos && r.file != null) { rememberSkip(r.file.getName()); appendLine("FILMINV/POSITIVE.TXT", relPath(r.file)); }
                 updateHistogram(r.file);
                 showToast(r.file == null ? "Captured (no JPEG found: RAW only?)"
                         : "Captured " + r.file.getName());
@@ -1734,14 +1769,33 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     /** JPEGs that are not plain negatives (positive captures, measurement shots): the engine skips them. */
-    private void rememberSkip(String name) {
+    private void rememberSkip(String name) { appendLine("FILMINV/CAPTURED.TXT", name.toUpperCase()); }
+
+    /** Path on the card, e.g. DCIM/11361121/LTL00016.JPG. */
+    private String relPath(File f) {
+        String c = card.getAbsolutePath(), p = f.getAbsolutePath();
+        return p.startsWith(c) ? p.substring(c.length()).replaceFirst("^/+", "") : p;
+    }
+
+    private void appendLine(String rel, String line) {
         try {
-            File f = new File(card, "FILMINV/CAPTURED.TXT");
+            File f = new File(card, rel);
             f.getParentFile().mkdirs();
             FileWriter fw = new FileWriter(f, true);
-            fw.write(name.toUpperCase() + "\n");
+            fw.write(line + "\n");
             fw.close();
-        } catch (Throwable t) { err("remember capture", t); }
+        } catch (Throwable t) { err("append " + rel, t); }
+    }
+
+    private List<String> readLines(String rel) {
+        List<String> out = new ArrayList<String>();
+        try {
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(new File(card, rel)));
+            String line;
+            while ((line = r.readLine()) != null) if (line.trim().length() > 0) out.add(line.trim());
+            r.close();
+        } catch (Throwable ignored) {}
+        return out;
     }
 
     private java.util.Set<String> skipList() {
@@ -1758,10 +1812,44 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     // ================================================================== measurement shots
     private static final class Shot { int[] px; int w, h; }
 
+    /** Set once a small JPEG-only measurement shot failed to save: from then on measure in the camera's own format. */
+    private volatile boolean measureFullFormat;
+
     /**
-     * Capture with the plain (identity) curve in the camera's own format (RAW+JPEG), the JPEG decoded at ~750 px
-     * wide. Runs on a worker thread; the JPEG is listed in CAPTURED.TXT. No camera setting is changed: every
-     * session that started with a JPEG-only measurement shot (0.13-0.17) saved nothing after it.
+     * Small JPEG-only format for the next shot (the smallest picture size with the current aspect ratio), so a
+     * measurement does not leave a 25 MB RAW on the card. Undone when the camera is closed after the shot (both keys
+     * are in SAVED_KEYS). 0.13-0.17 blamed this format for the lost shots; the real cause was the one-shot-per-
+     * session limit (0.20), and 0.13's first JPEG-only measurement did save.
+     */
+    private synchronized boolean setMeasureFormat() {
+        if (cameraEx == null) return false;
+        try {
+            Camera cam = cameraEx.getNormalCamera();
+            Camera.Parameters p = cam.getParameters();
+            String size = null;
+            try {
+                Camera.Size cur = p.getPictureSize();
+                long best = Long.MAX_VALUE;
+                for (Camera.Size s : p.getSupportedPictureSizes()) {
+                    boolean same = Math.abs((long) s.width * cur.height - (long) s.height * cur.width) <= (long) cur.width * 8;
+                    if (same && s.width >= 1200 && (long) s.width * s.height < best) {
+                        best = (long) s.width * s.height;
+                        size = s.width + "x" + s.height;
+                    }
+                }
+            } catch (Throwable t) { err("picture sizes", t); }
+            if (size != null) setParamsWith(cam, "storage-fmt", "jpeg", "picture-size", size);
+            else setParamsWith(cam, "storage-fmt", "jpeg");
+            return true;
+        } catch (Throwable t) {
+            err("measurement format", t);
+            return false;
+        }
+    }
+
+    /**
+     * Capture with the plain (identity) curve, small JPEG only, decoded at ~750 px wide. Runs on a worker thread; the
+     * JPEG is listed in CAPTURED.TXT (the engine skips it) and MEASURE.TXT (safe to delete later on a computer).
      */
     private Shot measureShot() throws Exception {
         if (cameraEx == null) throw new IllegalStateException("live view not running");
@@ -1770,11 +1858,19 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try {
             measureCurve = true;
             applyCurve();
+            boolean small = !measureFullFormat && setMeasureFormat();
             Thread.sleep(400);                                    // let the curve and settings reach the sensor path
             ShotResult r = shoot(15000);
+            if (r.file == null && small) {
+                measureFullFormat = true;
+                out("measurement: nothing saved in the small JPEG format; retrying in the camera's own format");
+                Thread.sleep(400);
+                r = shoot(15000);
+            }
             File jpg = r.file;
             if (jpg == null) throw new IllegalStateException("no measurement JPEG appeared");
             rememberSkip(jpg.getName());
+            appendLine("FILMINV/MEASURE.TXT", relPath(jpg));
             BitmapFactory.Options o = new BitmapFactory.Options();
             o.inJustDecodeBounds = true;
             BitmapFactory.decodeFile(jpg.getAbsolutePath(), o);
@@ -1841,49 +1937,86 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     /**
-     * Make the clear film base neutral with the camera's own white balance (color temperature + G–M shift),
-     * measured from small captures: 3 shots to learn how the base color responds, then up to 2 correction
-     * steps. Afterwards the base is gray before our curve, so the inverted orange mask no longer turns blue;
-     * "Black" is set so the base itself maps to black.
+     * How the base color responds to the white balance near the answer: d ln(R/G), d ln(B/G) per mired (row 1 col 1,
+     * row 2 col 1) and per G–M step (col 2). Measured on the camera at 2800 K (0.20 log, the run that converged).
+     */
+    private static final double[][] CAL_SLOPE = {{-0.0031, 0.0648}, {0.0031, 0.0503}};
+
+    private static double worst(double[] r) { return Math.max(Math.abs(r[0]), Math.abs(r[1])); }
+
+    /** One measurement shot of the base; null (logged) if a channel is clipped, so the color ratios mean nothing. */
+    private double[] calShot(int[] codes, String what) throws Exception {
+        double[] r = baseRatios(measureShot(), codes);
+        boolean clipped = Math.max(codes[0], Math.max(codes[1], codes[2])) >= 250
+                || Math.min(codes[0], Math.min(codes[1], codes[2])) <= 6;
+        out(String.format("calib %s: %dK G-M %d -> r=[%.3f %.3f] base codes %d %d %d%s", what, temp, shiftGM,
+                r[0], r[1], codes[0], codes[1], codes[2], clipped ? " CLIPPED" : ""));
+        return clipped ? null : r;
+    }
+
+    /**
+     * Make the clear film base neutral with the camera's own white balance (color temperature + G–M shift), from
+     * small measurement shots. Starts near the answer (the last good calibration, else 2800 K, where an orange mask
+     * lands), steps with the slopes measured on this camera, each step at most 40 mired / 6 G–M, and keeps only shots
+     * that got closer: a worse or clipped shot halves the step from the best one. Usually 2 shots, at most 4.
+     * 0.20 started from the camera's 5500 K, learned the slopes there (with red clipped) and swung 2500 -> 7600 K.
+     * Afterwards the base is gray before our curve; "Black" is set so the base itself maps to black.
      */
     private void calibrateBase() {
         showToast("Calibrating: clear film (base) in the center, don't move…");
         shiftAB = 0;
-        double m0 = 1e6 / (wbActive ? temp : 5500);
-        int g0 = wbActive ? shiftGM : 0;
+        double mired;
+        int gm;
+        if (wbActive && temp >= 2500 && temp <= 4000) { mired = 1e6 / temp; gm = shiftGM; }
+        else if (calTemp > 0) { mired = 1e6 / calTemp; gm = calGm; }
+        else { mired = 1e6 / 2800; gm = 0; }
         int[] codes = new int[3];
         try {
-            setWbMired(m0, g0);
-            double[] r0 = baseRatios(measureShot(), codes);
-            setWbMired(m0 + 60, g0);
-            double[] r1 = baseRatios(measureShot(), codes);
-            setWbMired(m0, g0 + 8);
-            double[] r2 = baseRatios(measureShot(), codes);
-            double a = (r1[0] - r0[0]) / 60, c = (r1[1] - r0[1]) / 60;      // d(ratios)/d(mired)
-            double bb = (r2[0] - r0[0]) / 8, d = (r2[1] - r0[1]) / 8;        // d(ratios)/d(G–M)
-            double det = a * d - bb * c;
-            out(String.format("calib r0=[%.3f %.3f] J=[[%.4f %.4f][%.4f %.4f]]", r0[0], r0[1], a, bb, c, d));
-            if (Math.abs(det) < 1e-9) throw new IllegalStateException("white balance had no measurable effect");
-            double mired = m0, gm = g0;
-            double[] r = r0;
-            for (int step = 0; step < 3; step++) {
-                double dm = (-r[0] * d + r[1] * bb) / det, dg = (-a * r[1] + c * r[0]) / det;
-                mired = Math.max(101, Math.min(400, mired + dm));
-                gm = Math.max(-32, Math.min(32, gm + dg));
-                setWbMired(mired, (int) Math.round(gm));
-                r = baseRatios(measureShot(), codes);
-                out(String.format("calib step %d: %dK G-M %d -> r=[%.3f %.3f] base codes %d %d %d",
-                        step + 1, temp, shiftGM, r[0], r[1], codes[0], codes[1], codes[2]));
-                if (Math.abs(r[0]) < 0.03 && Math.abs(r[1]) < 0.03) break;
+            setWbMired(mired, gm);
+            double[] r = calShot(codes, "start");
+            if (r == null) {
+                boolean bright = Math.max(codes[0], Math.max(codes[1], codes[2])) >= 250;
+                throw new IllegalStateException(bright ? "base too bright (clipped): lower the exposure"
+                        : "base too dark: raise the exposure");
             }
-            int baseIn = Math.round(Math.max(codes[0], Math.max(codes[1], codes[2])) * 1023f / 255f);
+            double a = CAL_SLOPE[0][0], b = CAL_SLOPE[0][1], c = CAL_SLOPE[1][0], d = CAL_SLOPE[1][1];
+            double bestM = 1e6 / temp;                               // what was actually set (100 K steps)
+            int bestG = shiftGM;
+            double[] best = r;
+            int[] bestCodes = codes.clone();
+            double scale = 1;
+            for (int step = 1; step <= 3 && worst(best) >= 0.03; step++) {
+                double det = a * d - b * c;
+                double dm = (-best[0] * d + best[1] * b) / det, dg = (-a * best[1] + c * best[0]) / det;
+                double k = scale * Math.min(1, Math.min(40 / Math.max(1e-9, Math.abs(dm)), 6 / Math.max(1e-9, Math.abs(dg))));
+                setWbMired(Math.max(101, Math.min(400, bestM + dm * k)), (int) Math.round(bestG + dg * k));
+                double tm = 1e6 / temp;
+                int tg = shiftGM;
+                if (Math.abs(tm - bestM) < 1 && tg == bestG) break;      // the step rounds to the same setting
+                double[] rn = calShot(codes, "step " + step);
+                if (rn != null && worst(rn) < worst(best)) {
+                    double xm = tm - bestM, xg = tg - bestG;             // Broyden update of the slopes along the step
+                    double n = xm * xm + xg * xg;
+                    double e0 = rn[0] - best[0] - (a * xm + b * xg), e1 = rn[1] - best[1] - (c * xm + d * xg);
+                    double na = a + e0 * xm / n, nb = b + e0 * xg / n, nc = c + e1 * xm / n, nd = d + e1 * xg / n;
+                    double ndet = na * nd - nb * nc;
+                    if (ndet * det > 0 && Math.abs(ndet) > Math.abs(det) * 0.2) { a = na; b = nb; c = nc; d = nd; }
+                    best = rn; bestM = tm; bestG = tg; bestCodes = codes.clone();
+                } else {
+                    scale *= 0.5;                                    // worse or clipped: shorter step from the best
+                }
+            }
+            if (Math.abs(1e6 / temp - bestM) >= 1 || shiftGM != bestG) setWbMired(bestM, bestG);
+            int baseIn = Math.round(Math.max(bestCodes[0], Math.max(bestCodes[1], bestCodes[2])) * 1023f / 255f);
             inHi = Math.max(inLo + 64, Math.min(1023, baseIn - 8));
             requestCurve();
             saveRoll();
             refreshRow();
-            boolean good = Math.abs(r[0]) < 0.05 && Math.abs(r[1]) < 0.05;
+            boolean good = worst(best) < 0.05;
+            if (good) { calTemp = temp; calGm = shiftGM; savePrefs(); }
+            out(String.format("calib done: %dK G-M %d, r=[%.3f %.3f]%s", temp, shiftGM, best[0], best[1], good ? "" : " (not neutral)"));
             showToast((good ? "Base neutral: " : "Base close (check): ") + temp + " K, " + shiftLabel()
-                    + String.format(" (off %.0f%%/%.0f%%)", 100 * Math.abs(r[0]), 100 * Math.abs(r[1])));
+                    + String.format(" (off %.0f%%/%.0f%%)", 100 * Math.abs(best[0]), 100 * Math.abs(best[1])));
         } catch (Throwable t) {
             err("calibrate", t);
             showToast("Calibration failed: " + t.getMessage());
@@ -1944,6 +2077,88 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             err("alignment", t);
             showToast("Alignment check failed: " + t.getMessage());
         }
+    }
+
+    // ================================================================== review captures
+    /**
+     * Full-screen viewer for the positives this app made: captures listed in FILMINV/POSITIVE.TXT (0.21+) and the
+     * developed frames in FILMINV/, newest first. Live view keeps running underneath. Left/right or the dials browse,
+     * MENU / center / playback close; on the touch screen the left and right thirds browse, the middle closes.
+     */
+    private void openReview() {
+        reviewFiles.clear();
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        for (String rel : readLines("FILMINV/POSITIVE.TXT")) {
+            File f = new File(card, rel);
+            if (f.exists() && seen.add(f.getAbsolutePath())) reviewFiles.add(f);
+        }
+        File[] dev = new File(card, "FILMINV").listFiles();
+        if (dev != null) for (File f : dev) {
+            if (f.getName().toUpperCase().endsWith(".JPG") && seen.add(f.getAbsolutePath())) reviewFiles.add(f);
+        }
+        if (reviewFiles.isEmpty()) { showToast("No positives yet: capture one in positive mode"); return; }
+        java.util.Collections.sort(reviewFiles, new java.util.Comparator<File>() {
+            public int compare(File x, File y) { return x.lastModified() < y.lastModified() ? 1 : x.lastModified() > y.lastModified() ? -1 : 0; }
+        });
+        reviewOpen = true;
+        reviewIdx = 0;
+        reviewPhoto = new OverlayViews.Photo(this);
+        root.addView(reviewPhoto, new FrameLayout.LayoutParams(-1, -1));
+        reviewCaption = new TextView(this);
+        reviewCaption.setTextColor(0xfff2f2f2);
+        reviewCaption.setTextSize(sp(13));
+        reviewCaption.setShadowLayer(3, 0, 1, 0xff000000);
+        reviewCaption.setPadding(X(12), Y(6), X(12), Y(6));
+        root.addView(reviewCaption, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+        fixAspect(reviewCaption);
+        out("review: " + reviewFiles.size() + " positives");
+        showReviewItem();
+    }
+
+    private void closeReview() {
+        if (!reviewOpen) return;
+        reviewOpen = false;
+        reviewSeq++;
+        if (reviewPhoto != null) { reviewPhoto.setBitmap(null); root.removeView(reviewPhoto); }
+        if (reviewCaption != null) root.removeView(reviewCaption);
+        reviewPhoto = null;
+        reviewCaption = null;
+        poke();
+    }
+
+    private void reviewStep(int d) {
+        if (!reviewOpen || reviewFiles.isEmpty()) return;
+        reviewIdx = (reviewIdx + d + reviewFiles.size()) % reviewFiles.size();
+        showReviewItem();
+    }
+
+    /** Decodes the current picture at about screen size on a worker thread (the newest request wins). */
+    private void showReviewItem() {
+        final File f = reviewFiles.get(reviewIdx);
+        final int seq = ++reviewSeq;
+        final String where = f.getParentFile().getName() + "/" + f.getName();
+        reviewCaption.setText((reviewIdx + 1) + " / " + reviewFiles.size() + "   " + where + "   loading…");
+        new Thread(new Runnable() { public void run() {
+            Bitmap bm = null;
+            try {
+                BitmapFactory.Options o = new BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+                int ss = 1;
+                while (o.outWidth / (ss * 2) >= 640) ss *= 2;     // >= 640 px wide, a power of two (6000 px: 1/8)
+                o.inJustDecodeBounds = false;
+                o.inSampleSize = ss;
+                o.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                bm = BitmapFactory.decodeFile(f.getAbsolutePath(), o);
+            } catch (Throwable t) { err("review decode " + where, t); }
+            final Bitmap shown = bm;
+            ui.post(new Runnable() { public void run() {
+                if (seq != reviewSeq || reviewPhoto == null) { if (shown != null) shown.recycle(); return; }
+                reviewPhoto.setBitmap(shown);
+                reviewCaption.setText((reviewIdx + 1) + " / " + reviewFiles.size() + "   " + where
+                        + (shown == null ? "   (could not open)" : "") + "      ◀ ▶ browse · MENU back");
+            } });
+        } }).start();
     }
 
     // ================================================================== develop (in-camera positive, Mode A seed)
