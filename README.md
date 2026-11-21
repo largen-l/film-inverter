@@ -7,6 +7,10 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 > and still being tested on the camera. Not ready for everyday use.
 > Unofficial, not affiliated with Sony. Installing custom apps is at your own risk.
 
+**Cameras:** tested on the a6500 only. Other Sony bodies with PlayMemories Camera Apps may work: see
+[docs/cameras.md](docs/cameras.md) for the list, and please
+[report how it went](https://github.com/largen-l/film-inverter/issues/new?template=camera_report.yml) on yours.
+
 ## Goals
 
 - Shoot film negatives with the a6500 (copy stand / light source) and get **positives in camera**.

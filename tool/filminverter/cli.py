@@ -77,6 +77,9 @@ def main(argv=None) -> int:
     t.add_argument("action", choices=["list", "export", "install"])
     t.add_argument("name_or_file", nargs="?", help="built-in theme name (export) or .JSN file (install)")
     t.add_argument("--out", help="export: output folder (default: current)")
+    sc = sub.add_parser("sidecars", help="rename the camera's darktable/RawTherapee sidecars (.DTX/.PP3) to .ARW.xmp/.ARW.pp3")
+    sc.add_argument("folder", nargs="?", help="folder with the copied ARWs (default: the camera card's DCIM)")
+    sc.add_argument("--force", action="store_true", help="replace existing .ARW.xmp/.ARW.pp3 files")
     x = sub.add_parser("decompile", help="decompile a camera app with jadx and summarize its Sony API use")
     x.add_argument("apk")
     sub.add_parser("udev", help="Linux: show the one-time USB permission rule for Sony cameras")
@@ -127,6 +130,15 @@ def main(argv=None) -> int:
                 if not cards:
                     raise RuntimeError("no camera card mounted")
                 themes.install_to_card(cards[0], themes.load(Path(a.name_or_file)), log, Path(a.name_or_file).stem)
+        elif a.cmd == "sidecars":
+            from . import sidecars
+            folder = Path(a.folder) if a.folder else None
+            if folder is None:
+                cards = camera.find_cards()
+                if not cards:
+                    raise RuntimeError("give the folder with your copied ARWs (no camera card mounted)")
+                folder = Path(cards[0]) / "DCIM"
+            sidecars.fix(folder, log, force=a.force)
         elif a.cmd == "decompile":
             develop.decompile(Path(a.apk), log)
         elif a.cmd == "udev":

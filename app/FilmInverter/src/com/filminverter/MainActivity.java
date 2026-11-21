@@ -78,6 +78,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private int themeIdx;
     private int flipMode;                         // 0 normal, 1 upside down (window rotation)
     private boolean guidesOn, silent;
+    /** Menu › Save: 0 RAW+JPEG, 1 JPEG only, 2 RAW only (storage-fmt while the app runs; restored on exit). */
+    private int saveMode;
+    private static final String[] SAVE_NAMES = {"RAW+JPEG", "JPEG only", "RAW only"};
+    private static final String[] SAVE_FMT = {"rawjpeg", "jpeg", "raw"};
+    /** Menu › Sidecars: editors to write inversion settings for, next to each ARW (Sidecars.LIGHTROOM | ...). */
+    private int sidecarMode;
+    private static final int[] SIDECAR_CYCLE = {0, Sidecars.LIGHTROOM, Sidecars.DARKTABLE, Sidecars.RAWTHERAPEE,
+            Sidecars.LIGHTROOM | Sidecars.DARKTABLE | Sidecars.RAWTHERAPEE};
     private int delaySec;
 
     private static final int ROW_BLACK = 0, ROW_WHITE = 1, ROW_GAMMA = 2, ROW_TEMP = 3, ROW_AB = 4, ROW_GM = 5;
@@ -131,7 +139,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.27, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.28, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        try {                                                         // for compatibility reports (no serial number)
+            com.github.ma1co.openmemories.framework.DeviceInfo di = com.github.ma1co.openmemories.framework.DeviceInfo.getInstance();
+            out("camera: " + di.getModel() + ", firmware " + di.getFirmwareVersion() + ", Android " + di.getAndroidVersion()
+                    + " (API " + di.getAndroidSdkVersion() + "), PMCA API " + di.getApiVersion());
+        } catch (Throwable t) { out("camera: model unknown (" + t + ")"); }
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -1289,6 +1302,17 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             for (int k = 0; k < films.size(); k++) if (films.get(k).optString("name").equals(stock)) i = k;
             selectFilm(i + 1 < films.size() ? films.get(i + 1) : null);
             menuOpen = true; menuScroll.setVisibility(View.VISIBLE); rebuildMenu(); } });   // stay in the menu to keep cycling
+        addMenu("Save: " + SAVE_NAMES[saveMode], new Action() { public void run() {
+            saveMode = (saveMode + 1) % 3; savePrefs(); setParams("storage-fmt", SAVE_FMT[saveMode]);
+            showToast("Save: " + SAVE_NAMES[saveMode] + (saveMode == 1 ? " (no sidecars: no RAW)" : ""));
+            menuOpen = true; menuScroll.setVisibility(View.VISIBLE); rebuildMenu(); } });
+        addMenu("Sidecars: " + Sidecars.describe(sidecarMode), new Action() { public void run() {
+            int i = 0;
+            for (int k = 0; k < SIDECAR_CYCLE.length; k++) if (SIDECAR_CYCLE[k] == sidecarMode) i = k;
+            sidecarMode = SIDECAR_CYCLE[(i + 1) % SIDECAR_CYCLE.length]; savePrefs();
+            showToast("Sidecars: " + Sidecars.describe(sidecarMode)
+                    + (sidecarMode != 0 && baseCodes[1] == 0 ? " (calibrate the film base first)" : ""));
+            menuOpen = true; menuScroll.setVisibility(View.VISIBLE); rebuildMenu(); } });
         addMenu("Guides: " + (guidesOn ? "on" : "off"), new Action() { public void run() {
             guidesOn = !guidesOn; guides.setVisibility(guidesOn ? View.VISIBLE : View.GONE); savePrefs(); } });
         addMenu("Capture delay: " + delaySec + " s", new Action() { public void run() { delaySec = delaySec == 0 ? 2 : 0; savePrefs(); } });
@@ -1467,6 +1491,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             guidesOn = p.getBoolean("guides", false);
             delaySec = p.getInt("delay", 0);
             silent = p.getBoolean("silent", false);
+            saveMode = Math.max(0, Math.min(2, p.getInt("save", 0)));
+            sidecarMode = p.getInt("sidecars", 0);
             themeIdx = p.getInt("theme", 0);
             lensControls = p.getBoolean("lens", false);
             autoHide = p.getBoolean("autohide", true);
@@ -1481,7 +1507,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             getSharedPreferences("fi", MODE_PRIVATE).edit().putInt("flip2", flipMode).putBoolean("guides", guidesOn)
                     .putInt("delay", delaySec).putBoolean("silent", silent).putInt("theme", themeIdx)
                     .putBoolean("lens", lensControls).putBoolean("autohide", autoHide).putInt("aspect2", aspectPct)
-                    .putInt("calTemp", calTemp).putInt("calGm", calGm).commit();
+                    .putInt("calTemp", calTemp).putInt("calGm", calGm)
+                    .putInt("save", saveMode).putInt("sidecars", sidecarMode).commit();
         } catch (Throwable ignored) {}
     }
 
@@ -1632,7 +1659,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             for (String k : SAVED_KEYS) savedParams.put(k, p.get(k));
             out("saved settings: " + savedParams);
             paramsChanged = false;
-            if ("raw".equals(savedParams.get("storage-fmt"))) setParamsWith(cam, "storage-fmt", "rawjpeg");
+            if (!SAVE_FMT[saveMode].equals(savedParams.get("storage-fmt"))) setParamsWith(cam, "storage-fmt", SAVE_FMT[saveMode]);
             if (silent) setParamsWith(cam, "silent-shutter-mode", "true");
             if (wbActive) applyWbWith(cam);
             cam.setPreviewDisplay(surface.getHolder());
@@ -1793,12 +1820,17 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 + (wbActive ? " " + temp + "K " + shiftLabel() : " camWB") + (stock.length() > 0 ? ", " + stock : ""));
         new Thread(new Runnable() { public void run() {
             try {
-                ShotResult r = shoot(15000);
-                out("JPEG from capture: " + (r.file == null ? "none (RAW only?)" : r.file.getName()));
-                if (pos && r.file != null) { rememberSkip(r.file.getName()); appendLine("FILMINV/POSITIVE.TXT", relPath(r.file)); }
+                boolean rawOnly = saveMode == 2;
+                ShotResult r = shoot(15000, rawOnly);
+                File shown = r.file != null ? r.file : r.raw;
+                out("capture saved: " + (r.file == null ? "no JPEG" : r.file.getName()) + ", " + (r.raw == null ? "no RAW" : r.raw.getName()));
+                if (r.file != null) rememberSkip(r.file.getName());
+                if (pos && shown != null) appendLine("FILMINV/POSITIVE.TXT", relPath(shown));
+                String side = "";
+                if (r.raw != null && sidecarMode != 0) side = writeSidecars(r.raw);
                 updateHistogram(r.file);
-                showToast(r.file == null ? "Captured (no JPEG found: RAW only?)"
-                        : "Captured " + r.file.getName());
+                showToast(shown == null ? "Captured, but no " + (rawOnly ? "RAW" : "JPEG") + " found"
+                        : "Captured " + shown.getName() + side);
             } catch (Throwable t) {
                 err("capture", t);
                 showToast("Capture failed: " + t.getMessage());
@@ -1810,14 +1842,23 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     }
 
     /** Every JPEG under DCIM (all folders: the camera starts a new folder each day, mid-session too). */
-    private java.util.Set<String> dcimJpegs() {
+    private java.util.Set<String> dcimJpegs() { return dcimFiles(".JPG"); }
+
+    private java.util.Set<String> dcimFiles(String ext) {
         java.util.Set<String> s = new java.util.HashSet<String>();
         File[] sub = new File(card, "DCIM").listFiles();
         if (sub != null) for (File d : sub) {
             File[] fs = d.listFiles();
-            if (fs != null) for (File f : fs) if (f.getName().toUpperCase().endsWith(".JPG")) s.add(f.getAbsolutePath());
+            if (fs != null) for (File f : fs) if (f.getName().toUpperCase().endsWith(ext)) s.add(f.getAbsolutePath());
         }
         return s;
+    }
+
+    /** The ARW next to a JPEG (same 8.3 base name), or null. */
+    private static File rawFor(File jpg) {
+        String n = jpg.getName();
+        File f = new File(jpg.getParentFile(), n.substring(0, n.length() - 4) + ".ARW");
+        return f.exists() ? f : null;
     }
 
     /** Newest DCIM folder as Android lists it: name, file count, last three names (is the camera's newest file visible?). */
@@ -1838,17 +1879,21 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         } catch (Throwable t) { return "error " + t; }
     }
 
-    /** Result of one shot: the JPEG file it wrote, if one appeared. */
-    private static final class ShotResult { File file; }
+    /** Result of one shot: the JPEG and the ARW it wrote, each null if none appeared. */
+    private static final class ShotResult { File file, raw; }
 
     /**
      * One capture, run from a worker thread: takePicture on the UI thread, shutter held 2.5 s and released, the camera
      * closed and live view opened again (the only way this body saves the next shot), then the new file looked for by
      * name in every DCIM folder (the app clock is wrong). Nothing is written to the card meanwhile (see out()).
      */
-    private ShotResult shoot(long timeoutMs) throws Exception {
+    private ShotResult shoot(long timeoutMs) throws Exception { return shoot(timeoutMs, false); }
+
+    /** rawOnly: the camera saves only an ARW (Menu › Save: RAW only), so wait for that instead of a JPEG. */
+    private ShotResult shoot(long timeoutMs, boolean rawOnly) throws Exception {
         if (cameraEx == null) throw new IllegalStateException("live view not running");
-        final java.util.Set<String> before = dcimJpegs();
+        final String ext = rawOnly ? ".ARW" : ".JPG";
+        final java.util.Set<String> before = dcimFiles(ext);
         final ShotResult r = new ShotResult();
         final long t0 = System.currentTimeMillis();
         final Throwable[] fail = new Throwable[1];
@@ -1873,19 +1918,43 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         out("  live view reopened +" + (System.currentTimeMillis() - t0) + " ms");
         if (fail[0] != null) throw new IllegalStateException("takePicture: " + fail[0].getMessage());
         long end = t0 + timeoutMs;
-        while (System.currentTimeMillis() < end && r.file == null) {
+        File found = null;
+        while (System.currentTimeMillis() < end && found == null) {
             Thread.sleep(400);
-            for (String path : dcimJpegs()) if (!before.contains(path)) { r.file = new File(path); break; }
+            for (String path : dcimFiles(ext)) if (!before.contains(path)) { found = new File(path); break; }
         }
-        if (r.file != null) {
+        if (found != null) {
             long len = -1;
-            for (int i = 0; i < 20 && r.file.length() != len; i++) { len = r.file.length(); Thread.sleep(300); }
-            out("  file " + r.file.getParentFile().getName() + "/" + r.file.getName() + " +"
+            for (int i = 0; i < 20 && found.length() != len; i++) { len = found.length(); Thread.sleep(300); }
+            out("  file " + found.getParentFile().getName() + "/" + found.getName() + " +"
                     + (System.currentTimeMillis() - t0) + " ms, " + len + " bytes");
+            if (rawOnly) r.raw = found;
+            else { r.file = found; r.raw = rawFor(found); }
         } else {
-            out("  no new JPEG after " + timeoutMs + " ms; Android sees: " + dcimSummary());
+            out("  no new " + ext.substring(1) + " after " + timeoutMs + " ms; Android sees: " + dcimSummary());
         }
         return r;
+    }
+
+    /**
+     * Inversion settings for raw editors next to the ARW (Menu › Sidecars), from the roll's base calibration. The RAW's
+     * own white balance is the calibrated one, so the base is neutral in each editor's as-shot rendering.
+     * Returns a short note for the toast.
+     */
+    private String writeSidecars(File arw) {
+        if (baseCodes[1] == 0) return " (no sidecars: calibrate the film base)";
+        try {
+            Sidecars.Params p = new Sidecars.Params();
+            for (int c = 0; c < 3; c++) p.baseCode[c] = baseCodes[c];
+            p.film = stock;
+            p.temp = temp; p.tint = shiftGM;
+            List<String> names = Sidecars.write(arw, sidecarMode, p);
+            out("sidecars: " + names);
+            return " + " + names.size() + " sidecar" + (names.size() == 1 ? "" : "s");
+        } catch (Throwable t) {
+            err("sidecars", t);
+            return " (sidecars failed)";
+        }
     }
 
     /** JPEGs that are not plain negatives (positive captures, measurement shots): the engine skips them. */
@@ -2228,6 +2297,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
      * Null if the file has none (e.g. developed frames, which are small anyway).
      */
     private static Bitmap embeddedPreview(File f) throws Exception {
+        if (f.getName().toUpperCase().endsWith(".ARW")) return arwPreview(f);
         long len = f.length();
         int n = (int) Math.min(len, 1536 * 1024);
         byte[] b = new byte[n];
@@ -2251,6 +2321,44 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             if (bm != null) return bm;
         }
         return null;
+    }
+
+    /**
+     * The 1616x1080 preview JPEG inside an a6500 ARW: IFD0 tags 0x201/0x202 (offset/length), ~140 KB into the file;
+     * same colors as the camera's JPEG, curve included (checked on probe 4's RAW+JPEG pairs).
+     */
+    private static Bitmap arwPreview(File f) throws Exception {
+        java.io.RandomAccessFile raf = new java.io.RandomAccessFile(f, "r");
+        try {
+            byte[] h = new byte[8];
+            raf.readFully(h);
+            boolean le = h[0] == 'I';
+            long ifd = u32(h, 4, le), off = 0, len = 0;
+            raf.seek(ifd);
+            byte[] c = new byte[2];
+            raf.readFully(c);
+            int n = (int) (le ? (c[0] & 255) | (c[1] & 255) << 8 : (c[1] & 255) | (c[0] & 255) << 8);
+            byte[] e = new byte[12 * Math.min(n, 400)];
+            raf.readFully(e);
+            for (int i = 0; i * 12 < e.length; i++) {
+                int tag = le ? (e[i * 12] & 255) | (e[i * 12 + 1] & 255) << 8 : (e[i * 12 + 1] & 255) | (e[i * 12] & 255) << 8;
+                if (tag == 0x201) off = u32(e, i * 12 + 8, le);
+                if (tag == 0x202) len = u32(e, i * 12 + 8, le);
+            }
+            if (off <= 0 || len <= 0 || len > 4 * 1024 * 1024 || off + len > f.length()) return null;
+            byte[] j = new byte[(int) len];
+            raf.seek(off);
+            raf.readFully(j);
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inSampleSize = 2;
+            o.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            return BitmapFactory.decodeByteArray(j, 0, j.length, o);
+        } finally { raf.close(); }
+    }
+
+    private static long u32(byte[] b, int i, boolean le) {
+        return le ? (b[i] & 255L) | (b[i + 1] & 255L) << 8 | (b[i + 2] & 255L) << 16 | (b[i + 3] & 255L) << 24
+                  : (b[i + 3] & 255L) | (b[i + 2] & 255L) << 8 | (b[i + 1] & 255L) << 16 | (b[i] & 255L) << 24;
     }
 
     /** Decodes the current picture at about screen size on a worker thread (the newest request wins). */

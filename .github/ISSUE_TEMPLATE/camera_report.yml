@@ -1,0 +1,89 @@
+name: Camera report
+description: Tell us whether Film Inverter works on your camera (it helps even if it doesn't).
+title: "[Camera] "
+labels: ["camera report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Film Inverter! The list of cameras and their status is in
+        [docs/cameras.md](https://github.com/largen-l/film-inverter/blob/main/docs/cameras.md).
+        Please don't include serial numbers or other personal details.
+  - type: dropdown
+    id: camera
+    attributes:
+      label: Camera
+      options:
+        - a6500 (ILCE-6500)
+        - a6300 (ILCE-6300)
+        - a6000 (ILCE-6000)
+        - a5100 (ILCE-5100)
+        - a5000 (ILCE-5000)
+        - a7 (ILCE-7)
+        - a7R (ILCE-7R)
+        - a7S (ILCE-7S)
+        - a7 II (ILCE-7M2)
+        - a7R II (ILCE-7RM2)
+        - a7S II (ILCE-7SM2)
+        - NEX-6
+        - NEX-5R
+        - NEX-5T
+        - RX100 III (DSC-RX100M3)
+        - RX100 IV (DSC-RX100M4)
+        - RX100 V (DSC-RX100M5)
+        - RX10 II (DSC-RX10M2)
+        - RX10 III (DSC-RX10M3)
+        - RX1R II (DSC-RX1RM2)
+        - HX90 / HX90V
+        - HX60 / HX60V
+        - WX500
+        - Other (write it below)
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Camera firmware version
+      description: MENU → Setup → Version
+      placeholder: "1.06"
+  - type: input
+    id: app_version
+    attributes:
+      label: Film Inverter version
+      description: The first line of FIPROBE.TXT says it, e.g. "=== Film Inverter 0.28"
+  - type: dropdown
+    id: overall
+    attributes:
+      label: Overall
+      options:
+        - Works
+        - Works with problems
+        - Does not work
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: What worked
+      description: Tick what you tried and saw working.
+      options:
+        - label: The app installed
+        - label: The app opens (MENU → Application → Film Inverter)
+        - label: Live view turns into a positive (inverted)
+        - label: A capture saves, and its JPEG is a positive
+        - label: Two or more captures in a row all save
+        - label: Calibrate film base finishes
+        - label: Review captures shows the pictures
+        - label: Sidecars open as positives in my raw editor
+        - label: Exit returns to the camera cleanly (no freeze)
+  - type: textarea
+    id: details
+    attributes:
+      label: What happened
+      description: Anything that went wrong or looked different, and the camera model if you chose "Other".
+  - type: textarea
+    id: log
+    attributes:
+      label: Log (FIPROBE.TXT)
+      description: The file in the root of the memory card. Attach it (drag it in) or paste the part from your session.
+      render: text
