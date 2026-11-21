@@ -108,6 +108,19 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
   picture: the camera does not scale its live view to the surface. 0.18: live view always full screen, themes only
   decorate the side bars, panels hide after 5 s idle (Menu > Controls), round shapes and text corrected by 0.75.
 
+## 0.18 session → 0.19: one shot per session, since probe 8
+
+- 0.18: every measurement and capture failed, exit hung (battery pull, "Recovering data"), and the whole 0.18 log was
+  lost: what Android wrote never reached the card. No new photos.
+- Re-reading the probe logs: since the release fix (probe 8) **no live-view session ever saved more than its first
+  shot** (probe 8: 2nd and 3rd capture produced nothing; probes 9/10 took one capture per session). "Captures worked"
+  was one per session.
+- Recipe Lab (same platform) saw the same "no more shots until the app restarts" when it touched the card with the
+  camera open, opens/closes its log per line, and takes many frames in a row with: takePicture, hold 2.5 s,
+  cancelTakePicture + startPreview, next frame. Our app kept FIPROBE.TXT open for the whole session.
+- 0.19: the log is buffered and appended (open, write, close) about once a second, never during a shot; shots use
+  Recipe Lab's sequence; Menu > Circle shape (75-100 %, default 100: the 0.75 of 0.18 looked worse).
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and

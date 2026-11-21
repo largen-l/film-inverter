@@ -54,7 +54,7 @@ import java.util.Map;
 public class MainActivity extends SonyActivity implements SurfaceHolder.Callback {
 
     private final Handler ui = new Handler();
-    private PrintWriter log;
+    private final StringBuilder logBuf = new StringBuilder();     // lines waiting for the card (see flushLog)
     private File card;
 
     // ------------------------------------------------------------------ views
@@ -113,7 +113,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     @Override
     protected void onCreate(Bundle b) {
         card = Environment.getExternalStorageDirectory();
-        try { log = new PrintWriter(new FileWriter(new File(card, "FIPROBE.TXT"), true)); } catch (Exception e) { log = null; }
+
         installCrashLogger();
         super.onCreate(b);
         exposure = new Exposure(new Exposure.Host() {
@@ -128,7 +128,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.18, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.19, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -146,6 +146,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         restoreCamera();
         saveRoll();
         unflipForExit();
+        flushLog(true);
         super.onPause();
     }
 
@@ -153,7 +154,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     protected void onDestroy() {
         restoreCamera();
         out("=== exit ===");
-        if (log != null) log.close();
+        flushLog(true);
         super.onDestroy();
     }
 
@@ -164,17 +165,18 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     // ================================================================== UI
     // Eight layouts, one per UI concept (Theme.LAYOUTS), all dark and all with the same controls: mode, status,
     // base, WB, exposure, every row with its value, slider, menu, shutter. Coordinates are in the 640x480 space of
-    // the concept mockups. The live view always fills the screen: the a6500's 3:2 picture spans the full height
-    // and x 50..590, with dark side bars that themes may decorate. Panels over the picture hide after a few idle
-    // seconds (Menu > Controls), so the whole picture can be seen; any key or touch brings them back.
-    // The panel is 16:9 but the framebuffer is 640x480, so a pixel shows 4/3 as wide as tall: round things are
-    // drawn 0.75 as wide (PA) and text is condensed by the same factor, so both look right on the screen.
+    // the concept mockups. The live view always fills the screen; side bars left and right of the picture (when the
+    // circle-shape setting leaves any) may be decorated. Panels over the picture hide after a few idle seconds
+    // (Menu > Controls), so the whole picture can be seen; any key or touch brings them back.
+    // Menu > Circle shape (PA, 75-100%) narrows round things and text in case the screen's pixels are not square:
+    // 0.18 assumed a 16:9 panel (75%) and the owner found it looked worse than 100%.
     private int sp(float v) { return Math.round(v * themes.get(themeIdx).textScale); }
 
     private FrameLayout root;
     private String layout = "minimal";
     private float sx = 1f, sy = 1f;
-    static float PA = 0.75f;                                       // pixel aspect correction (see above)
+    static float PA = 1f;                                          // pixel aspect correction (see above), Menu > Circle shape
+    private int aspectPct = 100;
     private float picL = 50, picR = 590;                             // the picture's x range in mockup space
     private int menuLeft = 12, menuBottom = 116, toastTop = 52;
     private final List<View> rowBoxes = new ArrayList<View>();       // per row: what is highlighted / hidden
@@ -369,11 +371,19 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         int w = Math.max(d.getWidth(), d.getHeight()), h = Math.min(d.getWidth(), d.getHeight());
         sx = w / 640f;
         sy = h / 480f;
-        PA = (h * 16f / 9f) / w;                                    // 16:9 panel: 0.75 on a 640x480 framebuffer
-        float picW = 480f * 1.5f * PA;                               // 3:2 picture, full height
+        PA = aspectPct / 100f;                                       // Menu > Circle shape (owner: 0.75 looked worse than 1)
+        float picW = Math.min(640f, 480f * 1.5f * PA);              // 3:2 picture, full height (or full width)
         picL = (640f - picW) / 2f;
         picR = 640f - picL;
         out("screen " + w + "x" + h + ", pixel aspect " + PA + ", picture x " + Math.round(picL) + ".." + Math.round(picR));
+        buildOverlay();
+    }
+
+    private void applyAspect() {
+        PA = aspectPct / 100f;
+        float picW = Math.min(640f, 480f * 1.5f * PA);
+        picL = (640f - picW) / 2f;
+        picR = 640f - picL;
         buildOverlay();
     }
 
@@ -1264,6 +1274,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             if ("scope".equals(layout)) buildOverlay(); else refreshRow(); } });   // Scope lists the exposure rows
         addMenu("Controls: " + (autoHide ? "hide when idle" : "always shown"), new Action() { public void run() {
             autoHide = !autoHide; savePrefs(); poke(); } });
+        addMenu("Circle shape: " + aspectPct + "% wide", new Action() { public void run() {
+            aspectPct = aspectPct <= 75 ? 100 : aspectPct - 5; savePrefs(); applyAspect();
+            showToast("Circle shape " + aspectPct + "%: pick what looks round"); } });
         addMenu("Theme: " + themes.get(themeIdx).name, new Action() { public void run() {
             themeIdx = (themeIdx + 1) % themes.size(); savePrefs(); applyTheme();
             showToast("Theme " + themes.get(themeIdx).name + " (" + themes.get(themeIdx).source + ")"); } });
@@ -1407,6 +1420,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             themeIdx = p.getInt("theme", 0);
             lensControls = p.getBoolean("lens", false);
             autoHide = p.getBoolean("autohide", true);
+            aspectPct = p.getInt("aspect", 100);
         } catch (Throwable ignored) {}
     }
 
@@ -1414,7 +1428,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try {
             getSharedPreferences("fi", MODE_PRIVATE).edit().putInt("flip2", flipMode).putBoolean("guides", guidesOn)
                     .putInt("delay", delaySec).putBoolean("silent", silent).putInt("theme", themeIdx)
-                    .putBoolean("lens", lensControls).putBoolean("autohide", autoHide).commit();
+                    .putBoolean("lens", lensControls).putBoolean("autohide", autoHide).putInt("aspect", aspectPct).commit();
         } catch (Throwable ignored) {}
     }
 
@@ -1673,11 +1687,9 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private static final class ShotResult { File file; }
 
     /**
-     * One capture, run from a worker thread, in the exact sequence of probe 0.10 (the last version that saved every
-     * shot): takePicture on the UI thread, the shutter "released" 300 ms later (Sony waits for that, probe5-8.md),
-     * live view restarted at 3 s, and only then the new file looked for (by name, in every DCIM folder; the app
-     * clock is wrong). 0.12–0.16 waited for the file *before* restarting live view: the camera then never wrote
-     * it in time and saved nothing after the first shot of a session.
+     * One capture, run from a worker thread: takePicture on the UI thread, shutter held 2.5 s then released with
+     * live view restarted (Recipe Lab's multi-frame sequence), then the new file looked for by name in every DCIM
+     * folder (the app clock is wrong). Nothing is written to the card meanwhile (see out()).
      */
     private ShotResult shoot(long timeoutMs) throws Exception {
         if (cameraEx == null) throw new IllegalStateException("live view not running");
@@ -1692,15 +1704,14 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 out("  takePicture +" + (System.currentTimeMillis() - t0) + " ms");
             } catch (Throwable t) { fail[0] = t; err("takePicture", t); }
         } });
+        // Recipe Lab's sample run, which takes many frames in a row on these bodies: hold the shutter 2.5 s, then
+        // release it and restart live view together.
         ui.postDelayed(new Runnable() { public void run() {
             try { if (cameraEx != null) cameraEx.cancelTakePicture(); } catch (Throwable t) { err("release shutter", t); }
-            out("  shutter released +" + (System.currentTimeMillis() - t0) + " ms");
-        } }, 300);
-        ui.postDelayed(new Runnable() { public void run() {
             try { if (cameraEx != null) cameraEx.getNormalCamera().startPreview(); } catch (Throwable t) { err("restart preview", t); }
-            out("  live view restarted +" + (System.currentTimeMillis() - t0) + " ms");
-        } }, 3000);
-        Thread.sleep(500);
+            out("  released, live view restarted +" + (System.currentTimeMillis() - t0) + " ms");
+        } }, 2500);
+        Thread.sleep(2800);                                         // the DCIM search starts once the shot is released
         if (fail[0] != null) throw new IllegalStateException("takePicture: " + fail[0].getMessage());
         long end = t0 + timeoutMs;
         while (System.currentTimeMillis() < end && r.file == null) {
@@ -1715,7 +1726,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         } else {
             out("  no new JPEG after " + timeoutMs + " ms; Android sees: " + dcimSummary());
         }
-        long wait = t0 + 3300 - System.currentTimeMillis();            // never hand back before live view is back
+        long wait = t0 + 2800 - System.currentTimeMillis();            // never hand back before live view is back
         if (wait > 0) Thread.sleep(wait);
         return r;
     }
@@ -2007,12 +2018,18 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     // ================================================================== logging
     private final long logT0 = System.currentTimeMillis();
 
+    /**
+     * Log lines are kept in memory and appended to FIPROBE.TXT about once a second, each time opened, written and
+     * closed, never while a shot is being taken. 0.12-0.18 kept the file open for the whole session: the camera
+     * then saved the first shot of a session and nothing after it, Android never saw that file, and a battery pull
+     * lost everything Android had written (Recipe Lab saw the same "no more shots until the app restarts" when it
+     * touched the card with the camera open, and opens/closes its log per line).
+     */
     private void out(final String s) {
-        if (log != null) {                                     // seconds since start: the app clock itself is wrong
-            long ms = System.currentTimeMillis() - logT0;
-            log.println(String.format(java.util.Locale.US, "[%6.1f] ", ms / 1000.0) + s);
-            log.flush();
-        }
+        long ms = System.currentTimeMillis() - logT0;               // seconds since start: the app clock itself is wrong
+        synchronized (logBuf) { logBuf.append(String.format(java.util.Locale.US, "[%6.1f] ", ms / 1000.0)).append(s).append('\n'); }
+        ui.removeCallbacks(logFlusher);
+        ui.postDelayed(logFlusher, 1000);
         ui.post(new Runnable() { public void run() {
             if (logText == null) return;
             logText.append(s + "\n");
@@ -2020,11 +2037,37 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         } });
     }
 
-    private void err(String what, Throwable t) {
-        out("!! " + what + ": " + t);
-        if (log != null) { t.printStackTrace(log); log.flush(); }
+    private final Runnable logFlusher = new Runnable() { public void run() {
+        if (capturing) { ui.postDelayed(this, 1000); return; }        // never touch the card during a shot
+        new Thread(new Runnable() { public void run() { flushLog(false); } }).start();
+    } };
+
+    private void flushLog(boolean force) {
+        String chunk;
+        synchronized (logBuf) {
+            if (logBuf.length() == 0 || (capturing && !force)) return;
+            chunk = logBuf.toString();
+            logBuf.setLength(0);
+        }
+        synchronized (logFileLock) {
+            FileWriter w = null;
+            try {
+                w = new FileWriter(new File(card, "FIPROBE.TXT"), true);
+                w.write(chunk);
+            } catch (Throwable ignored) {
+            } finally {
+                if (w != null) try { w.close(); } catch (Throwable ignored) {}
+            }
+        }
     }
 
+    private final Object logFileLock = new Object();
+
+    private void err(String what, Throwable t) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        out("!! " + what + ": " + t + "\n" + sw.toString().trim());
+    }
     @Override
     protected void logWarning(String what, Throwable t) { err(what, t); }
 
@@ -2044,10 +2087,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
             public void uncaughtException(Thread th, Throwable t) {
                 try {
-                    PrintWriter w = log != null ? log : new PrintWriter(new FileWriter(new File(card, "FIPROBE.TXT"), true));
-                    w.println("!! CRASH in thread " + th.getName() + ": " + t);
-                    t.printStackTrace(w);
-                    w.flush();
+                    err("CRASH in thread " + th.getName(), t);
+                    flushLog(true);
                 } catch (Throwable ignored) {}
                 restoreCamera();
                 unflipForExit();

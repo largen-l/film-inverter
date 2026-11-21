@@ -3,7 +3,7 @@
 In-camera **color negative inversion** for the **Sony a6500**, built as a PlayMemories Camera App (PMCA),
 installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a desktop reference engine.
 
-> Status: **early (0.18)**: inverted live view and in-camera positives work; calibration features are new
+> Status: **early (0.19)**: inverted live view and in-camera positives work; calibration features are new
 > and still being tested on the camera. Not ready for everyday use.
 > Unofficial, not affiliated with Sony. Installing custom apps is at your own risk.
 
@@ -28,7 +28,7 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 | `docs/` | Plan, checkpoints, API findings |
 | `toolchain*/`, `scans/`, `build/`, `dist/` | Local only (git-ignored) |
 
-## On the camera (0.18)
+## On the camera (0.19)
 
 The app opens straight into **inverted live view**: the camera's own image processor applies an inverted
 tone curve, so live view and captured JPEGs are positives (the RAW stays the untouched negative).
