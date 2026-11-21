@@ -143,6 +143,20 @@ Logs in `logs/probe5-FIPROBE.TXT` and `logs/probe7/` (git-ignored).
   `FILMINV/MEASURE.TXT`. Positive captures are listed in `FILMINV/POSITIVE.TXT` for the new **Review captures** screen.
 - Circle shape: owner picked **80 %** (now the default).
 
+## 0.21 session → 0.22: auto levels
+
+- Calibration: from the 2600 K/G6 of the bad 0.20 run to 2800 K/G1 in 3 steps; after Reset roll, 1 shot (starts at the
+  last good result). Small JPEG-only measurement shots saved fine (3008x2000, ~1.1 MB). Owner: "film base seems great".
+- Auto levels failed on a frame filling the picture: `analyzeFrame` took the light sky along the top edge (rows 0-128)
+  for the rebate (its "base" 0.30/0.22/0.25 vs the calibrated 0.45 neutral), left it out, and the black point from the
+  rest clipped the whole sky to black (levels 301..534; clouds clipped pink).
+- 0.22: the calibrated base codes are kept in ROLL.TXT; a found border counts only if its color is within 20 % of them
+  (else the whole picture minus 3 % is used); 0.2 % percentiles instead of 0.5 %; black never above the base.
+  On the same shot: 297..582 instead of 301..534.
+- Still open: the positives have a cyan-green cast. One tone curve serves all three channels and white balance is a
+  pre-curve gain, so per-channel contrast (what a lab or the desktop engine does per channel) can't be matched in
+  camera; the base is neutral but the mid-tones are not.
+
 ## 0.9 additions (owner requests)
 
 - Slider inset from the screen edges; **double-tap the slider** resets that row (levels to defaults, WB rows and

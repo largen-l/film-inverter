@@ -130,7 +130,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.21, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.22, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -180,6 +180,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     static float PA = 1f;                                          // pixel aspect correction (see above), Menu > Circle shape
     private int aspectPct = 80;
     private int calTemp, calGm;                                    // last good base calibration (start point of the next)
+    private final int[] baseCodes = new int[3];                    // film base RGB codes after calibration (0 = not calibrated)
     // Review captures: full-screen viewer over the live view (Menu › Review captures, or the playback button)
     private boolean reviewOpen;
     private final List<File> reviewFiles = new ArrayList<File>();
@@ -1305,6 +1306,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             logScroll.setVisibility(logScroll.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE); } });
         addMenu("Reset roll (levels + WB)", new Action() { public void run() {
             inLo = 0; inHi = 1023; gammaX100 = 85; wbActive = false; temp = 5500; shiftAB = 0; shiftGM = 0;
+            java.util.Arrays.fill(baseCodes, 0);
             restoreWbOnly(); requestCurve(); saveRoll(); refreshRow(); showToast("Roll reset"); } });
         addMenu("Exit", new Action() { public void run() { exitApp(); } });
         menuSel = Math.min(menuSel, menuItems.size() - 1);
@@ -1481,6 +1483,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             inLo = o.optInt("inLo", 0); inHi = o.optInt("inHi", 1023); gammaX100 = o.optInt("gamma", 85);
             wbActive = o.optBoolean("wb", false); temp = o.optInt("temp", 5500);
             shiftAB = o.optInt("ab", 0); shiftGM = o.optInt("gm", 0);
+            baseCodes[0] = o.optInt("baseR", 0); baseCodes[1] = o.optInt("baseG", 0); baseCodes[2] = o.optInt("baseB", 0);
         } catch (Throwable t) { err("load roll", t); }
     }
 
@@ -1489,6 +1492,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             JSONObject o = new JSONObject();
             o.put("inLo", inLo); o.put("inHi", inHi); o.put("gamma", gammaX100);
             o.put("wb", wbActive); o.put("temp", temp); o.put("ab", shiftAB); o.put("gm", shiftGM);
+            o.put("baseR", baseCodes[0]); o.put("baseG", baseCodes[1]); o.put("baseB", baseCodes[2]);
             File f = rollFile();
             f.getParentFile().mkdirs();
             FileOutputStream fo = new FileOutputStream(f);
@@ -2007,6 +2011,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
                 }
             }
             if (Math.abs(1e6 / temp - bestM) >= 1 || shiftGM != bestG) setWbMired(bestM, bestG);
+            System.arraycopy(bestCodes, 0, baseCodes, 0, 3);
             int baseIn = Math.round(Math.max(bestCodes[0], Math.max(bestCodes[1], bestCodes[2])) * 1023f / 255f);
             inHi = Math.max(inLo + 64, Math.min(1023, baseIn - 8));
             requestCurve();
@@ -2033,24 +2038,44 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         try {
             Shot s = measureShot();
             NegEngine.Frame fr = NegEngine.analyzeFrame(s.px, s.w, s.h);
+            // A "border" only counts if it is the film base: with a calibrated base, its color must match. In 0.21 a
+            // light sky along the top edge was taken for the border, left out, and then clipped to black.
+            boolean border = fr.borderFound && fr.base != null;
+            String why = "";
+            if (border && baseCodes[1] > 0) {
+                for (int ch = 0; ch < 3; ch++) {
+                    double want = lin(baseCodes[ch]);
+                    if (Math.abs(fr.base[ch] / want - 1) > 0.2) border = false;
+                }
+                if (!border) why = " (edge found, not the film base: ignored)";
+            }
+            int x0 = fr.x0, y0 = fr.y0, x1 = fr.x1, y1 = fr.y1;
+            if (!border) { x0 = s.w * 3 / 100; y0 = s.h * 3 / 100; x1 = s.w - x0; y1 = s.h - y0; }
             int[] hist = new int[256];
             int n = 0;
-            for (int y = fr.y0; y < fr.y1; y += 2) for (int x = fr.x0; x < fr.x1; x += 2) {
+            for (int y = y0; y < y1; y += 2) for (int x = x0; x < x1; x += 2) {
                 int c = s.px[y * s.w + x];
                 int l = (((c >> 16) & 255) * 2126 + ((c >> 8) & 255) * 7152 + (c & 255) * 722) / 10000;
                 hist[l]++; n++;
             }
+            // densest 0.2% of the negative -> white, thinnest 0.2% -> black, but black never above the film base
             int lo = 0, hi = 255, acc = 0;
-            for (int i = 0; i < 256; i++) { acc += hist[i]; if (acc >= n * 0.005) { lo = i; break; } }
+            for (int i = 0; i < 256; i++) { acc += hist[i]; if (acc >= n * 0.002) { lo = i; break; } }
             acc = 0;
-            for (int i = 255; i >= 0; i--) { acc += hist[i]; if (acc >= n * 0.005) { hi = i; break; } }
+            for (int i = 255; i >= 0; i--) { acc += hist[i]; if (acc >= n * 0.002) { hi = i; break; } }
+            int black = Math.round(hi * 1023f / 255f) + 4;
+            if (baseCodes[1] > 0) {
+                int baseIn = Math.round(Math.max(baseCodes[0], Math.max(baseCodes[1], baseCodes[2])) * 1023f / 255f);
+                black = Math.min(black, baseIn - 8);
+            }
             inLo = Math.max(0, Math.round(lo * 1023f / 255f) - 4);
-            inHi = Math.min(1023, Math.max(inLo + 64, Math.round(hi * 1023f / 255f) + 4));
+            inHi = Math.min(1023, Math.max(inLo + 64, black));
             requestCurve();
             saveRoll();
             refreshRow();
-            out("auto levels: frame " + fr + " -> in " + inLo + ".." + inHi);
-            showToast("Levels set: " + inLo + "–" + inHi + (fr.borderFound ? " (border excluded)" : ""));
+            out("auto levels: frame " + fr + (border ? "" : " -> whole picture" + why) + ", codes " + lo + ".." + hi
+                    + " -> in " + inLo + ".." + inHi);
+            showToast("Levels set: " + inLo + "–" + inHi + (border ? " (border excluded)" : why));
         } catch (Throwable t) {
             err("auto levels", t);
             showToast("Auto levels failed: " + t.getMessage());
