@@ -130,7 +130,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.22, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.23, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         for (String e : errs) out("!! theme file " + e);
         if (!errs.isEmpty()) showToast("Theme file error: " + errs.get(0));
     }
@@ -181,6 +181,10 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     private int aspectPct = 80;
     private int calTemp, calGm;                                    // last good base calibration (start point of the next)
     private final int[] baseCodes = new int[3];                    // film base RGB codes after calibration (0 = not calibrated)
+    /** Film stock of the roll (a label for now; per-stock presets later, docs/plan.md). Menu › Film cycles these. */
+    private static final String[] STOCKS = {"", "Kodak Pro 160", "Kodak Portra 160", "Kodak Portra 400", "Kodak Ektar 100",
+            "Kodak Gold 200", "Kodak UltraMax 400", "Fujifilm 400H", "Fujifilm C200", "Cinestill 800T"};
+    private String stock = "";
     // Review captures: full-screen viewer over the live view (Menu › Review captures, or the playback button)
     private boolean reviewOpen;
     private final List<File> reviewFiles = new ArrayList<File>();
@@ -1121,7 +1125,8 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             public void run() {
                 modePill.setText(positive ? "POS" : "NEG");
                 framePill.setText(busy ? "Working…" : capturing ? "Saving…" : live ? "Live" : "Starting…");
-                basePill.setText(wbActive ? "Base set" : "Base: not set");
+                String film = stock.length() == 0 ? "" : stock.replaceFirst("^(Kodak|Fujifilm) ", "") + " · ";
+                basePill.setText(film + (wbActive ? "Base set" : "Base: not set"));
                 wbPill.setText(wbActive ? temp + " K · " + shiftLabel() : "Camera WB");
                 captureBtn.setBusy(capturing || busy);
                 expPill.setVisibility(lensControls && live ? View.VISIBLE : View.GONE);
@@ -1275,6 +1280,12 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         addMenu("Check alignment", new Action() { public void run() { runAsync(new Runnable() { public void run() { checkAlignment(); } }); } });
         addMenu("Review captures", new Action() { public void run() {
             if (capturing || busy) showToast("Busy, try again in a moment"); else openReview(); } });
+        addMenu("Film: " + (stock.length() == 0 ? "not labeled" : stock), new Action() { public void run() {
+            int i = java.util.Arrays.asList(STOCKS).indexOf(stock);
+            stock = STOCKS[(i + 1) % STOCKS.length];
+            saveRoll(); refreshPills();
+            showToast("Film: " + (stock.length() == 0 ? "not labeled" : stock));
+            menuOpen = true; menuScroll.setVisibility(View.VISIBLE); rebuildMenu(); } });   // stay in the menu to keep cycling
         addMenu("Guides: " + (guidesOn ? "on" : "off"), new Action() { public void run() {
             guidesOn = !guidesOn; guides.setVisibility(guidesOn ? View.VISIBLE : View.GONE); savePrefs(); } });
         addMenu("Capture delay: " + delaySec + " s", new Action() { public void run() { delaySec = delaySec == 0 ? 2 : 0; savePrefs(); } });
@@ -1483,6 +1494,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             inLo = o.optInt("inLo", 0); inHi = o.optInt("inHi", 1023); gammaX100 = o.optInt("gamma", 85);
             wbActive = o.optBoolean("wb", false); temp = o.optInt("temp", 5500);
             shiftAB = o.optInt("ab", 0); shiftGM = o.optInt("gm", 0);
+            stock = o.optString("stock", "");
             baseCodes[0] = o.optInt("baseR", 0); baseCodes[1] = o.optInt("baseG", 0); baseCodes[2] = o.optInt("baseB", 0);
         } catch (Throwable t) { err("load roll", t); }
     }
@@ -1492,6 +1504,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
             JSONObject o = new JSONObject();
             o.put("inLo", inLo); o.put("inHi", inHi); o.put("gamma", gammaX100);
             o.put("wb", wbActive); o.put("temp", temp); o.put("ab", shiftAB); o.put("gm", shiftGM);
+            o.put("stock", stock);
             o.put("baseR", baseCodes[0]); o.put("baseG", baseCodes[1]); o.put("baseB", baseCodes[2]);
             File f = rollFile();
             f.getParentFile().mkdirs();
@@ -1674,7 +1687,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         refreshPills();
         final boolean pos = positive;
         out("CAPTURE " + (pos ? "POSITIVE" : "NEGATIVE") + " in " + inLo + ".." + inHi + " g" + gammaX100
-                + (wbActive ? " " + temp + "K " + shiftLabel() : " camWB"));
+                + (wbActive ? " " + temp + "K " + shiftLabel() : " camWB") + (stock.length() > 0 ? ", " + stock : ""));
         new Thread(new Runnable() { public void run() {
             try {
                 ShotResult r = shoot(15000);
