@@ -96,6 +96,7 @@ jobs:
           path: toolchain-linux/downloads
           key: toolchain-linux-${{ hashFiles('tool/filminverter/toolchain.py') }}
       - run: python tool/run.py setup
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }   # GitHub API lookups: the anonymous limit is shared
       - run: python tool/run.py build PMCADemo
       - run: python tool/run.py build
       - uses: actions/upload-artifact@v4

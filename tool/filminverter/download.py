@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import tarfile
@@ -68,8 +69,11 @@ def extract(archive: Path, dest: Path, log: Log) -> Path:
 
 
 def github_json(path: str) -> dict:
-    req = urllib.request.Request(f"https://api.github.com/{path}", headers={"User-Agent": UA,
-                                                                             "Accept": "application/vnd.github+json"})
+    headers = {"User-Agent": UA, "Accept": "application/vnd.github+json"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:                         # CI: anonymous API calls share a small per-IP limit (v0.28.0 setup hit it)
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(f"https://api.github.com/{path}", headers=headers)
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
 
