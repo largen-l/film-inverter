@@ -95,8 +95,8 @@ def build(log, app: str = "FilmInverter", app_dir: Optional[str] = None) -> Path
     java = Path(cfg["java_home"]) / "bin"
     bt = Path(cfg["build_tools"])
     aj = cfg["android_jar"]
-    aapt = bt / f"aapt{EXE}"
-    zipalign = bt / f"zipalign{EXE}"
+    aapt = cfg.get("aapt") or bt / f"aapt{EXE}"               # set by setup; native tools on ARM Linux
+    zipalign = cfg.get("zipalign") or bt / f"zipalign{EXE}"
     stubs, fw = _openmemories_jars(cfg, log)
 
     out = root / "build" / name

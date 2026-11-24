@@ -89,18 +89,22 @@ by CI). Or from source: `pip install -r tool/requirements.txt`, then `python too
   libusb and a one-time USB permission rule (`filminverter udev` prints it). `filminverter doctor` names the
   right packages for your distro, e.g. `sudo apt install libusb-1.0-0`, `sudo dnf install libusb1`,
   `sudo pacman -S libusb`.
+- **Linux on ARM (Raspberry Pi 4/5, ARM servers):** `filminverter-linux-arm64`, same steps. Building the camera
+  app there also needs the distro's `aapt`, `zipalign` and `adb`, because Google only ships them for x86_64
+  (Debian/Ubuntu: `sudo apt install aapt zipalign adb`; `setup` tells you if they're missing).
 
 ### What has been tested
 
-| | Windows 10/11 x64 | macOS (Apple Silicon) | macOS (Intel) | Debian/Ubuntu | Fedora | Arch |
-|---|---|---|---|---|---|---|
-| Engine tests, develop (JPEG + RAW) | ✅ owner's PC + CI | ✅ CI | – | ✅ CI (Ubuntu 22.04) | – | – |
-| Executable runs (smoke test: CLI, themes, develop a synthetic negative) | ✅ owner's PC + CI | ✅ CI | ✅ CI (macOS 15) | ✅ CI (Ubuntu 22.04/24.04, Debian 12 containers) | ✅ CI (Fedora 41 container) | ✅ CI (Arch container) |
-| GUI opens | ✅ (screenshots checked) + CI | ✅ CI | ❓ | ✅ CI (virtual display) | ❓ | ❓ |
-| Toolchain setup + app build | ✅ | ❓ | ❓ | ✅ CI (Ubuntu 22.04) | ❓ | ❓ |
-| Install on the camera | ✅ (pmca-console, Proxmox VM USB passthrough) | ❓ | ❓ | ❓ | ❓ | ❓ |
-| Card detection / logs | ✅ code path, ❓ with the new tool | ❓ | ❓ | ❓ | ❓ | ❓ |
+| | Windows 10/11 x64 | macOS (Apple Silicon) | macOS (Intel) | Debian/Ubuntu | Linux ARM64 | Fedora | Arch |
+|---|---|---|---|---|---|---|---|
+| Engine tests, develop (JPEG + RAW) | ✅ owner's PC + CI | ✅ CI | – | ✅ CI (Ubuntu 22.04) | ✅ Debian 13 VM | – | – |
+| Executable runs (smoke test: CLI, themes, develop a synthetic negative) | ✅ owner's PC + CI | ✅ CI | ✅ CI (macOS 15) | ✅ CI (Ubuntu 22.04/24.04, Debian 12 containers) | ✅ Debian 13 VM (built there) | ✅ CI (Fedora 41 container) | ✅ CI (Arch container) |
+| GUI opens | ✅ (screenshots checked) + CI | ✅ CI | ❓ | ✅ CI (virtual display) | ✅ Debian 13 VM (virtual display) | ❓ | ❓ |
+| Toolchain setup + app build | ✅ | ❓ | ❓ | ✅ CI (Ubuntu 22.04) | ✅ Debian 13 VM (distro aapt/zipalign/adb) | ❓ | ❓ |
+| Install on the camera | ✅ (pmca-console, Proxmox VM USB passthrough) | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
+| Card detection / logs | ✅ code path, ❓ with the new tool | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
 
+Details per release: [docs/testing.md](docs/testing.md).
 ✅ tested (CI = the GitHub Actions workflow `.github/workflows/tool.yml`, all green on 2026-11-20) ·
 ❓ needs testing on real hardware · – not separately tested (same code as the column next to it).
 Camera USB on macOS/Linux is the biggest unknown: Sony-PMCA-RE runs from source with libusb on Linux, and

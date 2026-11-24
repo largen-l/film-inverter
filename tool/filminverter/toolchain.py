@@ -45,8 +45,7 @@ def setup(log, with_ndk: bool = False) -> dict:
     dl = tc / "downloads"
     dl.mkdir(parents=True, exist_ok=True)
     log(f"toolchain: {tc}  ({platforms.describe()})")
-    if OS == "linux" and ARCH != "x64":
-        log("WARNING: Android build-tools (aapt, zipalign) only exist for x86_64 Linux; building will fail on ARM.")
+    native = _native_android_tools(log)
 
     # ---- JDK 17
     log("== JDK 17 (Temurin)")
@@ -150,12 +149,28 @@ def setup(log, with_ndk: bool = False) -> dict:
         "jasmin": str(jasmin), "jadx": str(jadx / "bin" / ("jadx.bat" if OS == "windows" else "jadx")),
         "src": str(src), "libs": str(tc / "libs"), "pmca": pmca_cmd, "pmca_cwd": pmca_cwd,
         "adb": str(sdk / "platform-tools" / f"adb{EXE}"),
+        "aapt": str(bt / f"aapt{EXE}"), "zipalign": str(bt / f"zipalign{EXE}"),
     }
+    cfg.update(native)
     config_path().write_text(json.dumps(cfg, indent=2))
     log(f"Setup complete. Config: {config_path()}")
     if OS != "windows" and not platforms.have_libusb():
         log("NOTE: libusb not found; camera installs need it: " + platforms.install_hint("libusb"))
     return cfg
+
+
+def _native_android_tools(log) -> dict:
+    """ARM Linux: Google's aapt, zipalign and adb are x86_64 only, so use the distro's native builds from PATH.
+    Everything else in the SDK (d8, apksigner, android.jar) is Java and works as downloaded."""
+    if OS != "linux" or ARCH == "x64":
+        return {}
+    found = {t: shutil.which(t) for t in ("aapt", "zipalign", "adb")}
+    missing = [t for t, p in found.items() if not p]
+    if missing:
+        raise RuntimeError(f"On {ARCH} Linux the build needs native {', '.join(missing)} (Google ships x86_64 only): "
+                           + platforms.install_hint("android-tools") + "\nthen run setup again.")
+    log(f"  {ARCH}: using the system's aapt, zipalign and adb (" + ", ".join(found.values()) + ")")
+    return found
 
 
 def _setup_pmca(tc: Path, dl: Path, src: Path, log):

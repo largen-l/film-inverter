@@ -75,7 +75,8 @@ def linux_family() -> str:
 
 # package names per family for what the tool needs from the system
 _PKGS = {
-    "debian": {"tk": "python3-tk", "libusb": "libusb-1.0-0", "venv": "python3-venv", "unzip": "unzip"},
+    "debian": {"tk": "python3-tk", "libusb": "libusb-1.0-0", "venv": "python3-venv", "unzip": "unzip",
+               "android-tools": "aapt zipalign adb"},   # native builds for ARM (Google ships x86_64 only)
     "fedora": {"tk": "python3-tkinter", "libusb": "libusb1", "venv": "python3", "unzip": "unzip"},
     "arch": {"tk": "tk", "libusb": "libusb", "venv": "python", "unzip": "unzip"},
 }
@@ -91,7 +92,7 @@ def install_hint(*needs: str) -> str:
     if OS == "windows":
         return "Install Python 3 from python.org (Tk is included)."
     fam = linux_family()
-    if fam in _PKGS:
+    if fam in _PKGS and all(n in _PKGS[fam] for n in needs):
         return _INSTALL[fam] + " " + " ".join(_PKGS[fam][n] for n in needs)
     return "Install these with your package manager: " + ", ".join(needs)
 

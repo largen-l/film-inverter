@@ -12,6 +12,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sep = os.pathsep            # PyInstaller --add-data separator: ';' on Windows, ':' elsewhere
 
+try:                        # without Tk on the build machine the executable silently ships with no GUI
+    import tkinter  # noqa: F401
+except ImportError:
+    sys.exit("tkinter is missing, so the executable would have no GUI. Install Tk for this Python "
+             "(Debian/Ubuntu: sudo apt install python3-tk) and run again.")
+
 args = [
     sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
     "--name", "filminverter",

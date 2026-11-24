@@ -2,7 +2,7 @@
 #   tests:    engine tests + tool from source (CLI and a GUI open/close) on Linux, Windows, macOS
 #   package:  single-file executables per OS/CPU (PyInstaller), each smoke-tested
 #   distros:  the Linux executable on Debian, Fedora and Arch containers
-#   apk:      toolchain setup + camera app build on Linux (the same code path Windows/macOS use)
+#   apk:      toolchain setup + camera app build on Linux x64 and arm64 (the same code path Windows/macOS use)
 #   release:  on a v* tag, attach the executables and the APK to a GitHub release
 name: tool
 on:
@@ -44,7 +44,9 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, name: linux-x64 }
+          - { os: ubuntu-22.04-arm, name: linux-arm64, optional: true }   # Raspberry Pi 4/5, ARM servers
           - { os: windows-latest, name: windows-x64 }
+          - { os: windows-11-arm, name: windows-arm64, optional: true }  # Snapdragon laptops
           - { os: macos-latest, name: macos-arm64 }
           - { os: macos-15-intel, name: macos-x64, optional: true }
     runs-on: ${{ matrix.os }}
@@ -60,6 +62,8 @@ jobs:
         run: |
           EXE=dist/filminverter; [ -f dist/filminverter.exe ] && EXE=dist/filminverter.exe
           python tool/smoketest.py "$EXE"
+          if [ "$RUNNER_OS" = Linux ]; then sudo apt-get install -y -qq xvfb >/dev/null && FI_GUI_SELFTEST=1 xvfb-run -a "$EXE" gui
+          else FI_GUI_SELFTEST=1 "$EXE" gui; fi       # the executable's GUI opens and closes (Tk bundled)
           mv "$EXE" "dist/filminverter-${{ matrix.name }}$( [ "${EXE##*.}" = exe ] && echo .exe )"
       - uses: actions/upload-artifact@v4
         with: { name: "filminverter-${{ matrix.name }}", path: dist/filminverter-* }
@@ -86,7 +90,12 @@ jobs:
       - run: chmod +x dist/filminverter-linux-x64 && python3 tool/smoketest.py dist/filminverter-linux-x64
 
   apk:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-22.04-arm]   # ARM uses the distro's aapt/zipalign/adb (Google ships x86_64 only)
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'ubuntu-22.04-arm' }}   # an ARM failure doesn't hold up a release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -94,12 +103,15 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: toolchain-linux/downloads
-          key: toolchain-linux-${{ hashFiles('tool/filminverter/toolchain.py') }}
+          key: toolchain-${{ matrix.os }}-${{ hashFiles('tool/filminverter/toolchain.py') }}
+      - if: runner.arch == 'ARM64'
+        run: sudo apt-get update && sudo apt-get install -y aapt zipalign adb
       - run: python tool/run.py setup
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }   # GitHub API lookups: the anonymous limit is shared
       - run: python tool/run.py build PMCADemo
       - run: python tool/run.py build
-      - uses: actions/upload-artifact@v4
+      - if: runner.arch != 'ARM64'       # the release ships one APK
+        uses: actions/upload-artifact@v4
         with: { name: FilmInverter-apk, path: build/FilmInverter/FilmInverter.apk }
 
   release:
