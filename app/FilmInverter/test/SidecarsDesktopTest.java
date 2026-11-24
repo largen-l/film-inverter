@@ -18,15 +18,22 @@ public class SidecarsDesktopTest {
         File arw = new File(a[0]);
         Sidecars.Params p = new Sidecars.Params();
         for (int c = 0; c < 3; c++) p.baseCode[c] = Integer.parseInt(a[1 + c]);
+        double wbR = 0, wbB = 0;
         for (int i = 4; i < a.length; i++) {
             String[] kv = a[i].split("=", 2);
-            if (kv[0].equals("redRatio")) p.redRatio = Double.parseDouble(kv[1]);
+            if (kv[0].equals("wb")) { String[] w = kv[1].split(","); wbR = Double.parseDouble(w[0]); wbB = Double.parseDouble(w[1]); }
+            else if (kv[0].equals("redRatio")) p.redRatio = Double.parseDouble(kv[1]);
             else if (kv[0].equals("greenExp")) p.greenExp = Double.parseDouble(kv[1]);
             else if (kv[0].equals("blueRatio")) p.blueRatio = Double.parseDouble(kv[1]);
             else Sidecars.class.getField(kv[0]).setDouble(null, Double.parseDouble(kv[1]));
         }
+        if (System.getProperty("camera") != null) {                // exactly what the camera writes (8.3 names)
+            System.out.println(Sidecars.write(arw, Sidecars.LIGHTROOM | Sidecars.DARKTABLE | Sidecars.RAWTHERAPEE, p));
+            return;
+        }
         String n = arw.getName(), stem = n.substring(0, n.lastIndexOf('.'));
-        save(new File(arw.getParentFile(), n + ".xmp"), Sidecars.darktable(p));
+        String dt = Sidecars.darktable(p);
+        save(new File(arw.getParentFile(), n + ".xmp"), wbR > 0 ? Sidecars.darktableWithWb(dt, wbR, wbB) : dt);
         save(new File(arw.getParentFile(), n + ".pp3"), Sidecars.rawtherapee(p));
         save(new File(arw.getParentFile(), stem + ".xmp"), Sidecars.lightroom(p));
     }

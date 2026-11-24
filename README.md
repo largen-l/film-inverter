@@ -3,7 +3,7 @@
 In-camera **color negative inversion** for the **Sony a6500**, built as a PlayMemories Camera App (PMCA),
 installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a desktop reference engine.
 
-> Status: **early (0.27)**: inverted live view and in-camera positives work; calibration features are new
+> Status: **early (0.28)**: inverted live view and in-camera positives work; calibration features are new
 > and still being tested on the camera. Not ready for everyday use.
 > Unofficial, not affiliated with Sony. Installing custom apps is at your own risk.
 
@@ -32,7 +32,7 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 | `docs/` | Plan, checkpoints, API findings |
 | `toolchain*/`, `scans/`, `build/`, `dist/` | Local only (git-ignored) |
 
-## On the camera (0.27)
+## On the camera (0.28)
 
 The app opens straight into **inverted live view**: the camera's own image processor applies an inverted
 tone curve, so live view and captured JPEGs are positives (the RAW stays the untouched negative).
@@ -53,6 +53,10 @@ tone curve, so live view and captured JPEGs are positives (the RAW stays the unt
   *New in 0.13, not yet tested on the camera.*
 - Every shot takes about 6 s: the camera saves only one shot per live-view session, so the app closes and reopens
   the camera after each one. Measurement shots (calibration: usually 2) are small JPEGs listed in `FILMINV/MEASURE.TXT`.
+- **Save** (Menu): RAW+JPEG, JPEG only, or RAW only (review then uses the preview inside the ARW).
+- **Sidecars** (Menu): a settings file next to each ARW so it opens as a positive in **Lightroom / Camera Raw**,
+  **darktable** or **RawTherapee**. darktable and RawTherapee need one step after copying the card:
+  `filminverter sidecars <folder>`. Details, tuning and Lightroom test steps: [docs/sidecars.md](docs/sidecars.md).
 - Calibration and levels are kept per roll in `FILMINV/ROLL.TXT`.
 - **Themes**: 8 built in; make your own in the desktop tool's **Themes** tab (or `filminverter theme ...`),
   which writes the `.JSN` file to `FILMINV/THEMES/` on the card.
@@ -68,6 +72,7 @@ One program, `filminverter`, as a window (run it with no arguments) or a command
 | `doctor` | Checks this system and prints the exact install command for anything missing |
 | `install [apk] [--latest]` | Installs the app on the camera (USB Mass Storage mode), retrying through the mode switch |
 | `develop <folder> [--prefer raw] [--crop]` | Inverts a folder of scans on the computer (originals untouched) |
+| `sidecars [folder]` | Readies the camera's darktable/RawTherapee sidecars (rename + white balance), see [docs/sidecars.md](docs/sidecars.md) |
 | `theme list / export / install` | Camera UI themes (8.3 file names, as the camera requires) |
 | `card find / logs` | Finds the camera card; copies the app's log and outputs to the computer |
 | `setup`, `build` | Developer: download the toolchain (~1 GB) and build the camera app (needs a source checkout) |

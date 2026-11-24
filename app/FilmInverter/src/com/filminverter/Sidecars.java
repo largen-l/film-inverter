@@ -28,13 +28,18 @@ public final class Sidecars {
         public int[] baseCode = new int[3];
         public String film = "";
         public int temp, tint;
-        /** C-41 contrast per channel relative to green (RawTherapee's defaults, also used for the others). */
-        public double redRatio = 1.36, greenExp = 1.5, blueRatio = 0.86;
+        /**
+         * Contrast per channel relative to green (RawTherapee's exponents, also used for Lightroom's curves).
+         * RawTherapee's defaults (1.36 / 0.86) came out warm on Kodak Ektacolor Pro 160; 1.1 / 0.95 sits between them
+         * and darktable's rendering of the same frames.
+         */
+        public double redRatio = 1.1, greenExp = 1.5, blueRatio = 0.95;
     }
 
     // Where the base sits in each editor, as a factor on its linear value in the camera JPEG (sRGB decode).
-    // Tuned on the a6500 with darktable 5.6.2 / RawTherapee 5.13 (see docs/sidecars.md); Lightroom: untested estimate.
-    public static double DT_BASE = 1.0, RT_BASE = 1.0, LR_BASE = 1.0;
+    // 0.38 in both darktable 5.6.2 and RawTherapee 5.13 (the base frame renders neutral black), the same ratio as
+    // rawpy's linear base (0.17) to the JPEG's (0.45) on the a6500: docs/sidecars.md. Lightroom: untested, same estimate.
+    public static double DT_BASE = 0.38, RT_BASE = 0.38, LR_BASE = 0.38;
     /** Lightroom: density range from base to the white point, as a linear ratio (1.6 D). */
     public static double LR_RANGE = 0.025;
 
@@ -160,6 +165,29 @@ public final class Sidecars {
         return s.toString();
     }
 
+    /**
+     * darktable white balance (temperature, params v4: float red, green, blue, various; int preset), "as shot".
+     * The multipliers are the ARW's as-shot ones normalized to green; Sony encrypts them in the ARW, so the camera
+     * leaves this out and `filminverter sidecars` adds it on the computer (same text, see tool/.../sidecars.py).
+     */
+    public static String darktableWbEntry(double red, double blue) {
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(20).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        bb.putFloat((float) red).putFloat(1f).putFloat((float) blue).putFloat(1f).putInt(0);   // preset 0: as shot
+        StringBuilder s = new StringBuilder();
+        for (byte x : bb.array()) s.append(String.format("%02x", x & 255));
+        return "     <rdf:li\n      darktable:num=\"0\"\n      darktable:operation=\"temperature\"\n      darktable:enabled=\"1\"\n"
+            + "      darktable:modversion=\"4\"\n      darktable:params=\"" + s + "\"\n"
+            + "      darktable:multi_name=\"\"\n      darktable:multi_name_hand_edited=\"0\"\n      darktable:multi_priority=\"0\"\n"
+            + "      darktable:blendop_version=\"13\"\n      darktable:blendop_params=\"" + NO_BLEND + "\"/>\n";
+    }
+
+    /** The camera's darktable sidecar plus the white balance entry (what the desktop tool does). */
+    public static String darktableWithWb(String xmp, double red, double blue) {
+        return xmp.replace("darktable:history_end=\"1\"", "darktable:history_end=\"2\"")
+                  .replace("darktable:num=\"0\"", "darktable:num=\"1\"")
+                  .replace("<darktable:history>\n    <rdf:Seq>\n", "<darktable:history>\n    <rdf:Seq>\n" + darktableWbEntry(red, blue));
+    }
+
     public static String darktable(Params p) {
         double[] b = baseLin(p), d = new double[3];
         for (int c = 0; c < 3; c++) d[c] = Math.max(0.00001, Math.min(1.5, b[c] * DT_BASE));
@@ -170,7 +198,7 @@ public final class Sidecars {
             + "  <rdf:Description rdf:about=\"\"\n"
             + "    xmlns:darktable=\"http://darktable.sf.net/\"\n"
             + "   darktable:xmp_version=\"4\"\n"
-            + "   darktable:auto_presets_applied=\"0\"\n"
+            + "   darktable:auto_presets_applied=\"" + (int) DT_AUTOPRESETS + "\"\n"
             + "   darktable:iop_order_version=\"4\"\n"
             + "   darktable:history_end=\"1\">\n"
             + "   <darktable:history>\n    <rdf:Seq>\n     <rdf:li\n"
@@ -182,6 +210,8 @@ public final class Sidecars {
     }
 
     // negadoctor print settings (darktable defaults unless tuned)
+    /** 1 = darktable skips its default workflow modules (white balance then stays "as shot"). */
+    public static double DT_AUTOPRESETS = 1;
     public static double DT_DMAX = 2.046, DT_OFFSET = -0.05, DT_BLACK = 0.0755, DT_GAMMA = 4.0, DT_SOFTCLIP = 0.75, DT_EXPOSURE = 0.9245;
 
     // ------------------------------------------------------------------ RawTherapee
@@ -193,9 +223,12 @@ public final class Sidecars {
         return "[Version]\nAppVersion=5.13\nVersion=353\n\n"
             + "[Film Negative]\nEnabled=true\n"
             + "RedRatio=" + f(p.redRatio) + "\nGreenExponent=" + f(p.greenExp) + "\nBlueRatio=" + f(p.blueRatio) + "\n"
-            + "ColorSpace=1\nRefInput=" + in + "\nRefOutput=" + o + ";" + o + ";" + o + ";\n";
+            + "ColorSpace=1\nRefInput=" + in + "\nRefOutput=" + o + ";" + o + ";" + o + ";\n"
+            + "\n[Exposure]\nCompensation=" + f(RT_EV) + "\nBlack=" + Math.round(RT_BLACK) + "\n";
     }
 
     /** Output value of the base in RawTherapee (its own base picker uses 65535/512). */
     public static double RT_OUT = 65535.0 / 512;
+    /** Exposure lift after the inversion (the base stays near black: Black pulls it back down). */
+    public static double RT_EV = 2.5, RT_BLACK = 1500;
 }
