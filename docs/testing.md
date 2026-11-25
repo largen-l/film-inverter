@@ -4,6 +4,34 @@ What was tested, on what, and what came out. The summary table is in the README 
 this file has the details. Newest first. Every release is published before its hardware testing finishes, and
 its section here is updated as results come in.
 
+## v0.29.0: camera clock fix (2026-11-24)
+
+The app's log and the "measured" date of saved films were 6 hours behind the camera's own clock (the
+camera's time-zone offset, applied twice). Now they use the camera's local clock, as on its file times.
+**Camera test pending.**
+
+## v0.28 on the camera (a6500, 2026-11-24)
+
+| Test | Result |
+|---|---|
+| Menu › Film: the earlier base measurement became the saved film "Kodak Ektacolor Pro 160" and loads at start | ✅ |
+| Save › RAW only, JPEG only, RAW+JPEG: each saves the right files; the setting is restored on exit | ✅ |
+| Sidecars › Lightroom / darktable / RawTherapee / all three: the right files next to each RAW (`.XMP`, `.DTX`, `.PP3`) | ✅ |
+| Sidecars with JPEG only: none written, and the menu says so | ✅ |
+| `filminverter sidecars <folder>` on the copied card folder (adds darktable's as-shot white balance) | ✅ |
+| darktable 5.6 and RawTherapee 5.13 open the camera-written sidecars as positives (command-line render) | ✅ see below |
+| Lightroom Classic | ❓ |
+| Device line in the log (model, firmware, Android, API; no serial number) | ✅ |
+| Clean exit | ✅ |
+| Check alignment with no film edge in the frame | ✅ says to include some rebate |
+| Log timestamps | ❌ 6 h behind the camera clock; fixed in v0.29.0 |
+
+Sidecars on Kodak Ektacolor Pro 160 (the owner's roll; sheet made during tuning): the camera's own positive
+JPEG, then RawTherapee and darktable opening the RAW with only the sidecar applied. They are starting points,
+flatter than the camera's JPEG; levels are set per frame in the editor.
+
+![Camera positive, RawTherapee sidecar, darktable sidecar](images/sidecars-ektacolor160.jpg)
+
 ## v0.28.2: Linux ARM64 (2026-11-24)
 
 **Machine:** Debian 13 (trixie) arm64 VM, 16 cores, 8 GB RAM, Python 3.13.5. The VM's CPU is emulated by
@@ -21,6 +49,9 @@ than on real ARM hardware.
 | `build PMCADemo`, `build` (camera app) | ✅ the APK's contents are identical, file for file, to the Windows build (only the signature differs) |
 | Executable (`tool/package.py`): smoke test | ✅ |
 | Executable GUI | ✅ after the fix below |
+| Released `filminverter-linux-arm64`: `doctor`, smoke test, GUI | ✅ |
+| Released executable: `setup` picks the system aapt/zipalign/adb on aarch64 | ✅ (downloads still running at the time of writing) |
+| Released executable: `build` | by design needs a source checkout; says so |
 | Camera USB install | ❓ not tried (the VM has no camera passed through) |
 
 **Fixed in this release:**

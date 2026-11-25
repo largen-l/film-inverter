@@ -20,7 +20,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.filminverter.engine.NegEngine;
-import com.github.ma1co.openmemories.framework.DateTime;
 import com.sony.scalar.hardware.CameraEx;
 
 import org.json.JSONObject;
@@ -31,7 +30,7 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Calendar;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,7 +138,7 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
         themeIdx = Math.max(0, Math.min(themes.size() - 1, themeIdx));
         buildUi();
         applyWindowFlip();
-        out("=== Film Inverter 0.28, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
+        out("=== Film Inverter 0.29, " + now() + " === theme " + themes.get(themeIdx).name + ", " + themes.size() + " themes");
         try {                                                         // for compatibility reports (no serial number)
             com.github.ma1co.openmemories.framework.DeviceInfo di = com.github.ma1co.openmemories.framework.DeviceInfo.getInstance();
             out("camera: " + di.getModel() + ", firmware " + di.getFirmwareVersion() + ", Android " + di.getAndroidVersion()
@@ -2521,14 +2520,15 @@ public class MainActivity extends SonyActivity implements SurfaceHolder.Callback
     @Override
     protected void logWarning(String what, Throwable t) { err(what, t); }
 
+    /** The camera's own clock, as on its file times. Sony's calendar is already local time; OpenMemories' DateTime
+     *  adds the time-zone offset a second time (0.28 logged 12:58 for files saved at 18:58, offset -6 h). */
     private String now() {
         try {
-            Calendar c = DateTime.getInstance().getCurrentTime();
-            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            f.setTimeZone(c.getTimeZone());
-            return f.format(c.getTime());
+            com.sony.scalar.sysutil.PlainCalendar c = com.sony.scalar.sysutil.TimeUtil.getCurrentCalendar();
+            return String.format(Locale.US, "%04d-%02d-%02d %02d:%02d:%02d",
+                    c.year, c.month, c.day, c.hour, c.minute, c.second);
         } catch (Throwable t) {
-            return "?";
+            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(new java.util.Date());
         }
     }
 
