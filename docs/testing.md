@@ -15,8 +15,14 @@ Storage to install mode.
 
 Fixed: CI signs release APKs with the project key (kept as a private GitHub Actions secret, not in the
 repository). Self-built apps keep their own generated key; see "App signing" in the README. `install` now
-explains error 100. (Tags v0.29.2 and v0.29.3 have no release: v0.29.2 was pushed by mistake on the previous commit and
-cancelled, and v0.29.3 failed to decode the key secret.) **Test pending:** install the v0.29.4 release APK over the app built on the owner's PC.
+explains error 100. (Tags v0.29.2 and v0.29.3 have no release: v0.29.2 was pushed by mistake on the previous
+commit and cancelled, and v0.29.3 failed to decode the key secret.)
+
+| Test | Result |
+|---|---|
+| Release APK certificate matches the project key (SHA-256 in the README) | ✅ |
+| Install the v0.29.4 release APK from the Linux ARM64 VM over the app built on the owner's Windows PC | ✅ |
+| Camera install from Linux ARM64: Mass Storage → install mode switch, upload, install | ✅ (Proxmox, passed through by USB port) |
 
 ## v0.29.1: Linux executable setup fix (2026-11-24)
 
@@ -24,7 +30,8 @@ cancelled, and v0.29.3 failed to decode the key secret.) **Test pending:** insta
 inherited the executable's bundled libraries, so the system Python that builds the Sony-PMCA-RE environment
 loaded the wrong SSL library and pip could not download anything. Child processes now get the original
 library path back, a failed package install is retried on the next `setup`, and CI now runs `setup` from the
-Linux executable. **Test on the ARM VM pending.**
+Linux executable. **Tested:** `setup` from the released v0.29.1 `filminverter-linux-arm64` on the Debian 13
+arm64 VM completes, including the Sony-PMCA-RE packages ✅.
 
 ## v0.29.0: camera clock fix (2026-11-24)
 

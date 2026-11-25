@@ -110,7 +110,7 @@ Project key certificate, SHA-256 (check with `keytool -printcert -jarfile FilmIn
 | Executable runs (smoke test: CLI, themes, develop a synthetic negative) | ✅ owner's PC + CI | ✅ CI | ✅ CI (macOS 15) | ✅ CI (Ubuntu 22.04/24.04, Debian 12 containers) | ✅ Debian 13 VM (built there) | ✅ CI (Fedora 41 container) | ✅ CI (Arch container) |
 | GUI opens | ✅ (screenshots checked) + CI | ✅ CI | ❓ | ✅ CI (virtual display) | ✅ Debian 13 VM (virtual display) | ❓ | ❓ |
 | Toolchain setup + app build | ✅ | ❓ | ❓ | ✅ CI (Ubuntu 22.04) | ✅ Debian 13 VM (distro aapt/zipalign/adb) | ❓ | ❓ |
-| Install on the camera | ✅ (pmca-console, Proxmox VM USB passthrough) | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
+| Install on the camera | ✅ (pmca-console, Proxmox VM USB passthrough) | ❓ | ❓ | ❓ | ✅ Debian 13 VM (Proxmox USB port passthrough) | ❓ | ❓ |
 | Card detection / logs | ✅ code path, ❓ with the new tool | ❓ | ❓ | ❓ | ❓ | ❓ | ❓ |
 
 Details per release: [docs/testing.md](docs/testing.md).
