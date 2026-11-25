@@ -116,11 +116,12 @@ jobs:
         env: { FI_KEYSTORE_B64: "${{ secrets.FI_KEYSTORE_B64 }}" }
         run: |
           if [ -n "$FI_KEYSTORE_B64" ]; then          # empty on forks: they sign with their own generated key
-            echo "$FI_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            printf '%s' "$FI_KEYSTORE_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/release.keystore"
             export FI_KEYSTORE="$RUNNER_TEMP/release.keystore"
           fi
           python tool/run.py build
           rm -f "$RUNNER_TEMP/release.keystore"
+          keytool -printcert -jarfile build/FilmInverter/FilmInverter.apk | grep -E 'Owner|SHA256'
       - if: runner.arch != 'ARM64'       # the release ships one APK
         uses: actions/upload-artifact@v4
         with: { name: FilmInverter-apk, path: build/FilmInverter/FilmInverter.apk }

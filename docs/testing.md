@@ -4,7 +4,7 @@ What was tested, on what, and what came out. The summary table is in the README 
 this file has the details. Newest first. Every release is published before its hardware testing finishes, and
 its section here is updated as results come in.
 
-## v0.29.3: release APKs signed with one project key (2026-11-24)
+## v0.29.4: release APKs signed with one project key (2026-11-24)
 
 **Found while testing camera installs from Linux ARM64:** the install from the Debian 13 arm64 VM (camera
 passed through by USB port) worked up to the camera's install step, then the camera answered "Communication
@@ -15,8 +15,8 @@ Storage to install mode.
 
 Fixed: CI signs release APKs with the project key (kept as a private GitHub Actions secret, not in the
 repository). Self-built apps keep their own generated key; see "App signing" in the README. `install` now
-explains error 100. (Tag v0.29.2 was pushed by mistake on the previous commit; its build was cancelled and it
-has no release.) **Test pending:** install the v0.29.3 release APK over the app built on the owner's PC.
+explains error 100. (Tags v0.29.2 and v0.29.3 have no release: v0.29.2 was pushed by mistake on the previous commit and
+cancelled, and v0.29.3 failed to decode the key secret.) **Test pending:** install the v0.29.4 release APK over the app built on the owner's PC.
 
 ## v0.29.1: Linux executable setup fix (2026-11-24)
 
