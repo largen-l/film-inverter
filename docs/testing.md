@@ -4,6 +4,14 @@ What was tested, on what, and what came out. The summary table is in the README 
 this file has the details. Newest first. Every release is published before its hardware testing finishes, and
 its section here is updated as results come in.
 
+## v0.29.1: Linux executable setup fix (2026-11-24)
+
+`setup` run from the Linux executable (not from source) failed on Debian 13 arm64: the programs it starts
+inherited the executable's bundled libraries, so the system Python that builds the Sony-PMCA-RE environment
+loaded the wrong SSL library and pip could not download anything. Child processes now get the original
+library path back, a failed package install is retried on the next `setup`, and CI now runs `setup` from the
+Linux executable. **Test on the ARM VM pending.**
+
 ## v0.29.0: camera clock fix (2026-11-24)
 
 The app's log and the "measured" date of saved films were 6 hours behind the camera's own clock (the

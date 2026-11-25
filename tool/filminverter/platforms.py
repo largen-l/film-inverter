@@ -16,6 +16,17 @@ elif sys.platform == "darwin":
 else:
     OS = "linux"
 
+if FROZEN and OS != "windows":
+    # PyInstaller points LD_LIBRARY_PATH (DYLD_* on macOS) at its bundled libraries; programs we start (system
+    # python3 for the Sony-PMCA-RE venv, java, sdkmanager, adb) would load those instead of their own, e.g. a
+    # libssl that breaks pip's HTTPS (v0.29.0 on Debian 13). Give child processes the original values back.
+    for _var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
+        _orig = os.environ.pop(_var + "_ORIG", None)
+        if _orig is not None:
+            os.environ[_var] = _orig
+        else:
+            os.environ.pop(_var, None)
+
 _m = platform.machine().lower()
 ARCH = "aarch64" if _m in ("arm64", "aarch64") else "x64" if _m in ("x86_64", "amd64") else _m
 EXE = ".exe" if OS == "windows" else ""

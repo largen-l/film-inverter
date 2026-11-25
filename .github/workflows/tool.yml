@@ -64,6 +64,8 @@ jobs:
           python tool/smoketest.py "$EXE"
           if [ "$RUNNER_OS" = Linux ]; then sudo apt-get install -y -qq xvfb >/dev/null && FI_GUI_SELFTEST=1 xvfb-run -a "$EXE" gui
           else FI_GUI_SELFTEST=1 "$EXE" gui; fi       # the executable's GUI opens and closes (Tk bundled)
+          # setup from the executable: its child processes (system python3, java) must not load the bundled libraries
+          if [ "${{ matrix.name }}" = linux-x64 ]; then GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" "$EXE" setup; fi
           mv "$EXE" "dist/filminverter-${{ matrix.name }}$( [ "${EXE##*.}" = exe ] && echo .exe )"
       - uses: actions/upload-artifact@v4
         with: { name: "filminverter-${{ matrix.name }}", path: dist/filminverter-* }

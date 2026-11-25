@@ -194,7 +194,10 @@ def _setup_pmca(tc: Path, dl: Path, src: Path, log):
     # Linux: no binary release; run from source with its own venv (needs python3-venv and libusb)
     venv = tc / "pmca-venv"
     py = venv / "bin" / "python"
-    if not py.exists():
+    done = venv / ".requirements-installed"         # a failed pip run leaves a venv without packages: retry it
+    if not done.exists():
+        if venv.exists():
+            shutil.rmtree(venv)
         base_py = shutil.which("python3") or sys.executable
         r = subprocess.run([base_py, "-m", "venv", str(venv)], capture_output=True, text=True)
         if r.returncode != 0:
@@ -205,4 +208,5 @@ def _setup_pmca(tc: Path, dl: Path, src: Path, log):
         (tc / "pmca-requirements.txt").write_text("\n".join(reqs) + "\n")
         subprocess.run([str(py), "-m", "pip", "install", "--quiet", "--upgrade", "pip"], check=True)
         subprocess.run([str(py), "-m", "pip", "install", "--quiet", "-r", str(tc / "pmca-requirements.txt")], check=True)
+        done.write_text("ok\n")
     return [str(py), "pmca-console.py"], str(src / "Sony-PMCA-RE")
