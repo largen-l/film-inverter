@@ -7,7 +7,7 @@ through Sony's `CameraEx` API), and that has only been confirmed on the a6500. *
 untested.**
 
 **Tried it on your camera? Please
-[report it here](https://github.com/largen-l/film-inverter/issues/new?template=camera_report.yml)**, whether it
+[report it here](https://github.com/largen-l/sony-pmca-film-inverter/issues/new?template=camera_report.yml)**, whether it
 worked or not. One report per camera is enough to move a row from ❔ to ✅ or ❌.
 
 ## Status

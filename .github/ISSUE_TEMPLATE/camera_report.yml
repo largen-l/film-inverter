@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for trying Film Inverter! The list of cameras and their status is in
-        [docs/cameras.md](https://github.com/largen-l/film-inverter/blob/main/docs/cameras.md).
+        [docs/cameras.md](https://github.com/largen-l/sony-pmca-film-inverter/blob/main/docs/cameras.md).
         Please don't include serial numbers or other personal details.
   - type: dropdown
     id: camera

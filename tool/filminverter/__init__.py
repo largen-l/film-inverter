@@ -5,4 +5,4 @@ Run from source with `python tool/run.py <command>` or use the single-file execu
 Written by Claude (Anthropic) for the Film Inverter project.
 """
 __version__ = "0.29.4"
-REPO = "largen-l/film-inverter"
+REPO = "largen-l/sony-pmca-film-inverter"

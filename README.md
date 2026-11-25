@@ -9,7 +9,7 @@ installed with [Sony-PMCA-RE](https://github.com/ma1co/Sony-PMCA-RE). Plus a des
 
 **Cameras:** tested on the a6500 only. Other Sony bodies with PlayMemories Camera Apps may work: see
 [docs/cameras.md](docs/cameras.md) for the list, and please
-[report how it went](https://github.com/largen-l/film-inverter/issues/new?template=camera_report.yml) on yours.
+[report how it went](https://github.com/largen-l/sony-pmca-film-inverter/issues/new?template=camera_report.yml) on yours.
 
 ## Goals
 

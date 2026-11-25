@@ -28,7 +28,7 @@ Done:
   against android-16; d8/apksigner are run as jars (their .bat wrappers need the legacy SDK `tools/`).
   Paths come from `toolchain*/toolchain.json` (no env scripts). git/gh are portable copies in `toolchain\`;
   `toolchain\env.ps1` still puts them on PATH for the one-time `tools/publish-github.ps1`.
-- Repo: https://github.com/largen-l/film-inverter.
+- Repo: https://github.com/largen-l/sony-pmca-film-inverter.
 - PMCADemo comparison done (step 3): `SonyActivity` (AppInfoReceive broadcast, color depth, Sony scan
   codes) + `ExitCompletedReceiver`, adapted from PMCADemo (MIT). No uses-library entries needed.
 
@@ -87,7 +87,7 @@ Done:
 ## Environment
 
 - Windows PC, project at `A:\auto-film-scan` (local folder keeps the old name; the project is now
-  **Film Inverter**, repo `film-inverter`, camera menu "Film Inverter", package `com.filminverter`). Tool: `.venv\Scripts\python.exe tool\run.py ...` (the venv has numpy etc.).
+  **Film Inverter**, repo `sony-pmca-film-inverter`, camera menu "Film Inverter", package `com.filminverter`). Tool: `.venv\Scripts\python.exe tool\run.py ...` (the venv has numpy etc.).
 - The first probe was installed as the earlier name "Neg to Pos" (`com.negtopos`, log `NTPPROBE.TXT`,
   `DCIM/NTPTEST`). After installing Film Inverter, the owner can delete it via the camera's
   Application Management menu.
