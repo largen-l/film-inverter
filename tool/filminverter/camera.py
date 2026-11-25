@@ -55,6 +55,10 @@ def install(apk: Path, log, adb: bool = False) -> None:
         hint = ""
         if OS == "linux" and ("Access denied" in out or "permission" in out.lower()):
             hint = ("\nUSB permission problem: run `filminverter udev` for the one-time rule, or run this with sudo.")
+        elif "Communication error 100" in out:
+            hint = ("\nThe camera refused the app at the install step. Usually the installed Film Inverter was signed with "
+                    "another key (your own build vs. a release APK): uninstall it once on the camera (Menu > Application "
+                    "Management), then install again. If it persists, switch the camera off and on.")
         raise RuntimeError("install did not complete (see the output above)" + hint)
     log("Installed. On the camera: Menu > Application > Film Inverter.")
 

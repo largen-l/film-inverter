@@ -111,7 +111,16 @@ jobs:
       - run: python tool/run.py setup
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }   # GitHub API lookups: the anonymous limit is shared
       - run: python tool/run.py build PMCADemo
-      - run: python tool/run.py build
+      - name: Build, signed with the project key (secret FI_KEYSTORE_B64) so releases update each other
+        shell: bash
+        env: { FI_KEYSTORE_B64: "${{ secrets.FI_KEYSTORE_B64 }}" }
+        run: |
+          if [ -n "$FI_KEYSTORE_B64" ]; then          # empty on forks: they sign with their own generated key
+            echo "$FI_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export FI_KEYSTORE="$RUNNER_TEMP/release.keystore"
+          fi
+          python tool/run.py build
+          rm -f "$RUNNER_TEMP/release.keystore"
       - if: runner.arch != 'ARM64'       # the release ships one APK
         uses: actions/upload-artifact@v4
         with: { name: FilmInverter-apk, path: build/FilmInverter/FilmInverter.apk }

@@ -81,6 +81,13 @@ One program, `filminverter`, as a window (run it with no arguments) or a command
 **Get it:** single-file executables are attached to each [GitHub release](../../releases) (built and tested
 by CI). Or from source: `pip install -r tool/requirements.txt`, then `python tool/run.py`.
 
+**App signing:** release APKs (v0.29.3 on) are all signed with the project's key, so a newer release installs
+over an older one. If you `build` the app yourself, it is signed with a key generated on your computer
+(`debug.keystore` in your toolchain folder, never shared). The camera only accepts an update signed with the
+same key as the installed app, so when switching between your own builds and release APKs, uninstall
+Film Inverter once on the camera (Menu › Application Management) first; otherwise the install stops with
+"Communication error 100". To sign your builds with another keystore, set `FI_KEYSTORE` to its path.
+
 **Per system:**
 - **Windows:** run `filminverter-windows-x64.exe`. Nothing else needed.
 - **macOS:** `filminverter-macos-arm64` (Apple Silicon). The file isn't signed: the first time, right-click ›

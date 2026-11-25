@@ -4,6 +4,20 @@ What was tested, on what, and what came out. The summary table is in the README 
 this file has the details. Newest first. Every release is published before its hardware testing finishes, and
 its section here is updated as results come in.
 
+## v0.29.3: release APKs signed with one project key (2026-11-24)
+
+**Found while testing camera installs from Linux ARM64:** the install from the Debian 13 arm64 VM (camera
+passed through by USB port) worked up to the camera's install step, then the camera answered "Communication
+error 100" twice. Cause: CI signed every release APK with a newly generated key, and the camera (like Android)
+only accepts an update signed with the key of the installed app. The same app signed with the key of the
+earlier install went through: **camera install from Linux ARM64 works**, including the switch from Mass
+Storage to install mode.
+
+Fixed: CI signs release APKs with the project key (kept as a private GitHub Actions secret, not in the
+repository). Self-built apps keep their own generated key; see "App signing" in the README. `install` now
+explains error 100. (Tag v0.29.2 was pushed by mistake on the previous commit; its build was cancelled and it
+has no release.) **Test pending:** install the v0.29.3 release APK over the app built on the owner's PC.
+
 ## v0.29.1: Linux executable setup fix (2026-11-24)
 
 `setup` run from the Linux executable (not from source) failed on Debian 13 arm64: the programs it starts
